@@ -9,25 +9,23 @@ import secrets
 import string
 from email.message import EmailMessage
 
+
 class cbtconfig:
     def __init__(self, school_name, database_name="cbt_database"):
         self.__school_name = school_name
         self.database_name = database_name
-        self.conn = None
-        self.mycursor = None
+        self.conn          = None
+        self.mycursor      = None
         self.create_database()
         self.connect_database()
         self.create_tables()
 
+    # ------------------------------------------------------------------
+    # DATABASE SETUP
+    # ------------------------------------------------------------------
     def create_database(self):
-        """Create the MySQL database if it does not already exist."""
         try:
-            temp_conn = sql.connect(
-                host="127.0.0.1",
-                port=3306,
-                user="root",
-                password=""
-            )
+            temp_conn = sql.connect(host="127.0.0.1", port=3306, user="root", password="")
             temp_cursor = temp_conn.cursor()
             temp_cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.database_name}")
             temp_conn.commit()
@@ -39,13 +37,10 @@ class cbtconfig:
             raise
 
     def connect_database(self):
-        """Connect to the MySQL database after creating it."""
         try:
             self.conn = sql.connect(
-                host="127.0.0.1",
-                port=3306,
-                user="root",
-                password="",
+                host="127.0.0.1", port=3306,
+                user="root", password="",
                 database=self.database_name
             )
             self.conn.autocommit = True
@@ -56,99 +51,81 @@ class cbtconfig:
             raise
 
     def create_tables(self):
-        """Create all required tables if they do not already exist."""
         users_table = """
             CREATE TABLE IF NOT EXISTS users (
-                id INT PRIMARY KEY,
-                email VARCHAR(100) UNIQUE NOT NULL,
-                fullname VARCHAR(100) NOT NULL,
-                password VARCHAR(100) NOT NULL,
-                role VARCHAR(20) NOT NULL,
-                phone VARCHAR(20) DEFAULT NULL,
+                id         INT PRIMARY KEY,
+                email      VARCHAR(100) UNIQUE NOT NULL,
+                fullname   VARCHAR(100) NOT NULL,
+                password   VARCHAR(160) NOT NULL,
+                role       VARCHAR(20)  NOT NULL,
+                phone      VARCHAR(20)  DEFAULT NULL,
                 department VARCHAR(100) DEFAULT NULL
             ) ENGINE=InnoDB
         """
-
         subjects_table = """
             CREATE TABLE IF NOT EXISTS subjects (
-                subject_id INT AUTO_INCREMENT PRIMARY KEY,
+                subject_id   INT AUTO_INCREMENT PRIMARY KEY,
                 subject_name VARCHAR(100) NOT NULL UNIQUE,
-                subject_code VARCHAR(20) NOT NULL UNIQUE,
-                description TEXT DEFAULT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                subject_code VARCHAR(20)  NOT NULL UNIQUE,
+                description  TEXT DEFAULT NULL,
+                created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB
         """
-
         questions_table = """
             CREATE TABLE IF NOT EXISTS question (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+                id         INT AUTO_INCREMENT PRIMARY KEY,
                 subject_id INT DEFAULT NULL,
-                question TEXT NOT NULL UNIQUE,
-                option_a VARCHAR(255) NOT NULL,
-                option_b VARCHAR(255) NOT NULL,
-                option_c VARCHAR(255) NOT NULL,
-                option_d VARCHAR(255) NOT NULL,
-                answer VARCHAR(255) NOT NULL,
+                question   TEXT NOT NULL UNIQUE,
+                option_a   VARCHAR(255) NOT NULL,
+                option_b   VARCHAR(255) NOT NULL,
+                option_c   VARCHAR(255) NOT NULL,
+                option_d   VARCHAR(255) NOT NULL,
+                answer     VARCHAR(255) NOT NULL,
                 CONSTRAINT fk_question_subject
-                    FOREIGN KEY (subject_id)
-                    REFERENCES subjects(subject_id)
-                    ON DELETE SET NULL
-                    ON UPDATE CASCADE
+                    FOREIGN KEY (subject_id) REFERENCES subjects(subject_id)
+                    ON DELETE SET NULL ON UPDATE CASCADE
             ) ENGINE=InnoDB
         """
-
         results_table = """
             CREATE TABLE IF NOT EXISTS results (
-                result_id INT AUTO_INCREMENT PRIMARY KEY,
-                id INT NOT NULL,
+                result_id  INT AUTO_INCREMENT PRIMARY KEY,
+                id         INT NOT NULL,
                 subject_id INT DEFAULT NULL,
-                fullname VARCHAR(100) NOT NULL,
-                percent FLOAT NOT NULL,
-                grade VARCHAR(100) NOT NULL,
-                response TEXT,
+                fullname   VARCHAR(100) NOT NULL,
+                percent    FLOAT NOT NULL,
+                grade      VARCHAR(100) NOT NULL,
+                response   TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT fk_results_users_id
-                    FOREIGN KEY (id)
-                    REFERENCES users(id)
-                    ON DELETE CASCADE
-                    ON UPDATE CASCADE,
+                    FOREIGN KEY (id) REFERENCES users(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE,
                 CONSTRAINT fk_results_subject
-                    FOREIGN KEY (subject_id)
-                    REFERENCES subjects(subject_id)
-                    ON DELETE SET NULL
-                    ON UPDATE CASCADE
+                    FOREIGN KEY (subject_id) REFERENCES subjects(subject_id)
+                    ON DELETE SET NULL ON UPDATE CASCADE
             ) ENGINE=InnoDB
         """
-
         exams_table = """
             CREATE TABLE IF NOT EXISTS exams (
-                exam_id INT AUTO_INCREMENT PRIMARY KEY,
-                exam_title VARCHAR(150) NOT NULL UNIQUE,
-                subject_id INT DEFAULT NULL,
-                num_questions INT NOT NULL DEFAULT 10,
+                exam_id          INT AUTO_INCREMENT PRIMARY KEY,
+                exam_title       VARCHAR(150) NOT NULL UNIQUE,
+                subject_id       INT DEFAULT NULL,
+                num_questions    INT NOT NULL DEFAULT 10,
                 duration_minutes INT NOT NULL DEFAULT 30,
-                created_by INT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by       INT NOT NULL,
+                created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT fk_exams_subject
-                    FOREIGN KEY (subject_id)
-                    REFERENCES subjects(subject_id)
-                    ON DELETE SET NULL
-                    ON UPDATE CASCADE,
+                    FOREIGN KEY (subject_id) REFERENCES subjects(subject_id)
+                    ON DELETE SET NULL ON UPDATE CASCADE,
                 CONSTRAINT fk_exams_creator
-                    FOREIGN KEY (created_by)
-                    REFERENCES users(id)
-                    ON DELETE CASCADE
-                    ON UPDATE CASCADE
+                    FOREIGN KEY (created_by) REFERENCES users(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
             ) ENGINE=InnoDB
         """
+        for stmt in [users_table, subjects_table, questions_table,
+                     results_table, exams_table]:
+            self.mycursor.execute(stmt)
 
-        self.mycursor.execute(users_table)
-        self.mycursor.execute(subjects_table)
-        self.mycursor.execute(questions_table)
-        self.mycursor.execute(results_table)
-        self.mycursor.execute(exams_table)
-
-        # Safe migrations for existing databases
+    
         migrations = [
             ("users",    "phone",      "VARCHAR(20) DEFAULT NULL"),
             ("users",    "department", "VARCHAR(100) DEFAULT NULL"),
@@ -161,20 +138,37 @@ class cbtconfig:
                     f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
                 )
             except Error:
-                pass  # Column already exists
+                pass  
 
     # ------------------------------------------------------------------
-    # GT SCHOOLNAME
+    # GET SCHOOL NAME
     # ------------------------------------------------------------------
     def get_schoolname(self):
         return self.__school_name
 
     def validate_email(self, email):
-        pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-        return re.match(pattern, email) is not None
+        return re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email) is not None
+
 
     def hash_password(self, password):
-        return hashlib.sha256(password.encode()).hexdigest()
+        salt = os.urandom(32)
+        key  = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 260_000)
+        return (salt + key).hex()
+
+    def check_password(self, stored_hex, provided):
+        """Constant-time check. Also accepts legacy plain SHA-256 hashes."""
+        try:
+            if len(stored_hex) == 64:
+                return secrets.compare_digest(
+                    stored_hex,
+                    hashlib.sha256(provided.encode()).hexdigest()
+                )
+            b    = bytes.fromhex(stored_hex)
+            salt = b[:32]
+            key  = hashlib.pbkdf2_hmac("sha256", provided.encode(), salt, 260_000)
+            return secrets.compare_digest(b[32:], key)
+        except Exception:
+            return False
 
     def generate_verification_code(self, length=6):
         return "".join(str(secrets.randbelow(10)) for _ in range(length))
@@ -182,16 +176,12 @@ class cbtconfig:
     def generate_strong_password(self, length=12):
         if length < 8:
             length = 8
-        uppercase  = string.ascii_uppercase
-        lowercase  = string.ascii_lowercase
-        numbers    = string.digits
-        symbols    = "!@#$%^&*()_+-=[]{}|;:,.<>?"
-        all_chars  = uppercase + lowercase + numbers + symbols
+        all_chars = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{}|;:,.<>?"
         chars = [
-            secrets.choice(uppercase),
-            secrets.choice(lowercase),
-            secrets.choice(numbers),
-            secrets.choice(symbols),
+            secrets.choice(string.ascii_uppercase),
+            secrets.choice(string.ascii_lowercase),
+            secrets.choice(string.digits),
+            secrets.choice("!@#$%^&*()"),
         ]
         chars.extend(secrets.choice(all_chars) for _ in range(length - 4))
         secrets.SystemRandom().shuffle(chars)
@@ -201,17 +191,11 @@ class cbtconfig:
     # EMAIL
     # ------------------------------------------------------------------
     def send_email(self, receiver_email, subject, body):
-        smtp_host     = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        smtp_port     = int(os.getenv("SMTP_PORT", "587"))
-        smtp_user     = os.getenv("SMTP_USER")
-        smtp_password = os.getenv("SMTP_PASSWORD")
-        sender_email  = os.getenv("SMTP_SENDER", smtp_user)
-
-        if not all([smtp_host, smtp_user, smtp_password, sender_email]):
-            return {
-                "status": False,
-                "message": "Email settings are not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and SMTP_SENDER."
-            }
+        smtp_host     = "smtp.gmail.com"
+        smtp_port     = 465
+        smtp_user     = "agboolataiwo385@gmail.com"
+        smtp_password = "vwhapkhxnrgmwlsr"
+        sender_email  = "agboolataiwo385@gmail.com"
 
         msg = EmailMessage()
         msg["Subject"] = subject
@@ -220,8 +204,7 @@ class cbtconfig:
         msg.set_content(body)
 
         try:
-            with smtplib.SMTP(smtp_host, smtp_port) as server:
-                server.starttls()
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10) as server:
                 server.login(smtp_user, smtp_password)
                 server.send_message(msg)
             return {"status": True, "message": "Email sent successfully"}
@@ -249,10 +232,11 @@ class cbtconfig:
         if not self.validate_email(email):
             return {"status": False, "message": "Invalid email address"}
         if password != confirm_password:
-            return {"status": False, "message": "Password does not match"}
+            return {"status": False, "message": "Passwords do not match"}
+        if len(password) < 6:
+            return {"status": False, "message": "Password must be at least 6 characters"}
         if role not in ("student", "staff", "admin"):
             return {"status": False, "message": "Role must be student, staff, or admin"}
-
         try:
             hashed = self.hash_password(password)
             self.mycursor.execute(
@@ -271,17 +255,20 @@ class cbtconfig:
         except Exception as e:
             return {"status": False, "message": str(e)}
 
+    
     def login_user(self, email, password):
         try:
-            hashed = self.hash_password(password)
-            self.mycursor.execute(
-                "SELECT * FROM users WHERE email = %s AND password = %s",
-                (email, hashed)
-            )
+            self.mycursor.execute("SELECT * FROM users WHERE email = %s", (email,))
             user = self.mycursor.fetchone()
-            if user:
-                return {"status": True, "message": f"Welcome {user['fullname']}", "data": user}
-            return {"status": False, "message": "Invalid email or password"}
+            if not user or not self.check_password(user["password"], password):
+                return {"status": False, "message": "Invalid email or password"}
+           
+            if len(user["password"]) == 64:
+                self.mycursor.execute(
+                    "UPDATE users SET password = %s WHERE id = %s",
+                    (self.hash_password(password), user["id"])
+                )
+            return {"status": True, "message": f"Welcome {user['fullname']}", "data": user}
         except Exception as e:
             return {"status": False, "message": str(e)}
 
@@ -307,18 +294,24 @@ class cbtconfig:
     def update_profile(self, user_id, fullname=None, phone=None, department=None):
         fields, values = [], []
         if fullname:
-            fields.append("fullname = %s");    values.append(fullname.strip())
+            fields.append("fullname = %s");   values.append(fullname.strip())
         if phone:
-            fields.append("phone = %s");       values.append(phone.strip())
+            fields.append("phone = %s");      values.append(phone.strip())
         if department:
-            fields.append("department = %s");  values.append(department.strip())
+            fields.append("department = %s"); values.append(department.strip())
         if not fields:
             return {"status": False, "message": "No fields provided to update"}
         values.append(user_id)
         try:
-            self.mycursor.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", values)
+            self.mycursor.execute(
+                f"UPDATE users SET {', '.join(fields)} WHERE id = %s", values
+            )
             self.mycursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
-            return {"status": True, "message": "Profile updated successfully", "data": self.mycursor.fetchone()}
+            return {
+                "status": True,
+                "message": "Profile updated successfully",
+                "data": self.mycursor.fetchone()
+            }
         except Exception as e:
             return {"status": False, "message": str(e)}
 
@@ -330,17 +323,18 @@ class cbtconfig:
             return None
 
     def get_all_users(self):
-        self.mycursor.execute("SELECT id, email, fullname, role FROM users ORDER BY id ASC")
+        self.mycursor.execute(
+            "SELECT id, email, fullname, role FROM users ORDER BY id ASC"
+        )
         return self.mycursor.fetchall()
 
     # ------------------------------------------------------------------
     # SUBJECT MANAGEMENT
     # ------------------------------------------------------------------
     def add_subject(self, subject_name, subject_code, description=""):
-        """Create a new subject."""
         try:
             self.mycursor.execute(
-                "INSERT INTO subjects(subject_name, subject_code, description) VALUES(%s, %s, %s)",
+                "INSERT INTO subjects(subject_name, subject_code, description) VALUES(%s,%s,%s)",
                 (subject_name.strip(), subject_code.strip().upper(), description.strip() or None)
             )
             return {"status": True, "message": f"Subject '{subject_name}' added successfully"}
@@ -350,7 +344,6 @@ class cbtconfig:
             return {"status": False, "message": str(e)}
 
     def get_all_subjects(self):
-        """Return all subjects ordered by name."""
         try:
             self.mycursor.execute("SELECT * FROM subjects ORDER BY subject_name ASC")
             subjects = self.mycursor.fetchall()
@@ -361,9 +354,10 @@ class cbtconfig:
             return {"status": False, "message": str(e), "subjects": []}
 
     def get_subject_by_id(self, subject_id):
-        """Return a single subject by its ID."""
         try:
-            self.mycursor.execute("SELECT * FROM subjects WHERE subject_id = %s", (subject_id,))
+            self.mycursor.execute(
+                "SELECT * FROM subjects WHERE subject_id = %s", (subject_id,)
+            )
             subject = self.mycursor.fetchone()
             if not subject:
                 return {"status": False, "message": "Subject not found", "subject": None}
@@ -372,19 +366,20 @@ class cbtconfig:
             return {"status": False, "message": str(e), "subject": None}
 
     def update_subject(self, subject_id, subject_name=None, subject_code=None, description=None):
-        """Update one or more fields of a subject."""
         fields, values = [], []
         if subject_name:
-            fields.append("subject_name = %s");  values.append(subject_name.strip())
+            fields.append("subject_name = %s"); values.append(subject_name.strip())
         if subject_code:
-            fields.append("subject_code = %s");  values.append(subject_code.strip().upper())
+            fields.append("subject_code = %s"); values.append(subject_code.strip().upper())
         if description is not None:
-            fields.append("description = %s");   values.append(description.strip() or None)
+            fields.append("description = %s");  values.append(description.strip() or None)
         if not fields:
             return {"status": False, "message": "No fields provided to update"}
         values.append(subject_id)
         try:
-            self.mycursor.execute(f"UPDATE subjects SET {', '.join(fields)} WHERE subject_id = %s", values)
+            self.mycursor.execute(
+                f"UPDATE subjects SET {', '.join(fields)} WHERE subject_id = %s", values
+            )
             if self.mycursor.rowcount == 0:
                 return {"status": False, "message": "Subject not found"}
             return {"status": True, "message": "Subject updated successfully"}
@@ -394,19 +389,21 @@ class cbtconfig:
             return {"status": False, "message": str(e)}
 
     def delete_subject(self, subject_id):
-        """Delete a subject. Questions in the subject will have subject_id set to NULL."""
         try:
-            self.mycursor.execute("SELECT subject_name FROM subjects WHERE subject_id = %s", (subject_id,))
+            self.mycursor.execute(
+                "SELECT subject_name FROM subjects WHERE subject_id = %s", (subject_id,)
+            )
             subject = self.mycursor.fetchone()
             if not subject:
                 return {"status": False, "message": "Subject not found"}
-            self.mycursor.execute("DELETE FROM subjects WHERE subject_id = %s", (subject_id,))
+            self.mycursor.execute(
+                "DELETE FROM subjects WHERE subject_id = %s", (subject_id,)
+            )
             return {"status": True, "message": f"Subject '{subject['subject_name']}' deleted successfully"}
         except Exception as e:
             return {"status": False, "message": str(e)}
 
     def get_questions_by_subject(self, subject_id):
-        """Return all questions that belong to a given subject."""
         try:
             self.mycursor.execute(
                 "SELECT * FROM question WHERE subject_id = %s ORDER BY id ASC",
@@ -426,7 +423,7 @@ class cbtconfig:
         try:
             self.mycursor.execute(
                 """INSERT INTO question(subject_id, question, option_a, option_b, option_c, option_d, answer)
-                   VALUES(%s, %s, %s, %s, %s, %s, %s)""",
+                   VALUES(%s,%s,%s,%s,%s,%s,%s)""",
                 (subject_id, question, option_a, option_b, option_c, option_d, answer)
             )
             return {"status": True, "message": "Question added successfully"}
@@ -469,45 +466,29 @@ class cbtconfig:
     # EXAM MANAGEMENT
     # ------------------------------------------------------------------
     def create_exam(self, exam_title, subject_id, num_questions, duration_minutes, created_by):
-        """Create a new configured exam."""
         if not exam_title.strip():
             return {"status": False, "message": "Exam title cannot be empty"}
         if num_questions < 1:
             return {"status": False, "message": "Number of questions must be at least 1"}
         if duration_minutes < 1:
             return {"status": False, "message": "Duration must be at least 1 minute"}
-
-        # Check subject has enough questions
-        if subject_id:
-            try:
+        try:
+            if subject_id:
                 self.mycursor.execute(
                     "SELECT COUNT(*) AS total FROM question WHERE subject_id = %s",
                     (subject_id,)
                 )
-                row = self.mycursor.fetchone()
-                if row["total"] < num_questions:
-                    return {
-                        "status": False,
-                        "message": f"Subject only has {row['total']} question(s) but you requested {num_questions}"
-                    }
-            except Exception as e:
-                return {"status": False, "message": str(e)}
-        else:
-            try:
+            else:
                 self.mycursor.execute("SELECT COUNT(*) AS total FROM question")
-                row = self.mycursor.fetchone()
-                if row["total"] < num_questions:
-                    return {
-                        "status": False,
-                        "message": f"Question pool only has {row['total']} question(s) but you requested {num_questions}"
-                    }
-            except Exception as e:
-                return {"status": False, "message": str(e)}
-
-        try:
+            row = self.mycursor.fetchone()
+            if row["total"] < num_questions:
+                return {
+                    "status": False,
+                    "message": f"Only {row['total']} question(s) available but you requested {num_questions}"
+                }
             self.mycursor.execute(
                 """INSERT INTO exams(exam_title, subject_id, num_questions, duration_minutes, created_by)
-                   VALUES(%s, %s, %s, %s, %s)""",
+                   VALUES(%s,%s,%s,%s,%s)""",
                 (exam_title.strip(), subject_id, num_questions, duration_minutes, created_by)
             )
             return {"status": True, "message": f"Exam '{exam_title}' created successfully"}
@@ -517,7 +498,6 @@ class cbtconfig:
             return {"status": False, "message": str(e)}
 
     def get_all_exams(self):
-        """Return all exams with subject and creator details."""
         try:
             self.mycursor.execute("""
                 SELECT e.*, s.subject_name, s.subject_code,
@@ -535,7 +515,6 @@ class cbtconfig:
             return {"status": False, "message": str(e), "exams": []}
 
     def get_exam_by_id(self, exam_id):
-        """Return a single exam by ID."""
         try:
             self.mycursor.execute("""
                 SELECT e.*, s.subject_name, s.subject_code,
@@ -554,7 +533,6 @@ class cbtconfig:
 
     def update_exam(self, exam_id, exam_title=None, subject_id=None,
                     num_questions=None, duration_minutes=None):
-        """Update one or more fields of an exam."""
         fields, values = [], []
         if exam_title is not None:
             fields.append("exam_title = %s");       values.append(exam_title.strip())
@@ -580,9 +558,10 @@ class cbtconfig:
             return {"status": False, "message": str(e)}
 
     def delete_exam(self, exam_id):
-        """Delete an exam configuration."""
         try:
-            self.mycursor.execute("SELECT exam_title FROM exams WHERE exam_id = %s", (exam_id,))
+            self.mycursor.execute(
+                "SELECT exam_title FROM exams WHERE exam_id = %s", (exam_id,)
+            )
             exam = self.mycursor.fetchone()
             if not exam:
                 return {"status": False, "message": "Exam not found"}
@@ -592,7 +571,6 @@ class cbtconfig:
             return {"status": False, "message": str(e)}
 
     def generate_exams(self, subject_id=None, num_questions=None, duration_minutes=30):
-        """Generate a shuffled exam, optionally filtered by subject and capped by num_questions."""
         try:
             if subject_id:
                 self.mycursor.execute(
@@ -616,8 +594,10 @@ class cbtconfig:
     def save_result(self, user, percent, grade, responses, subject_id=None):
         try:
             self.mycursor.execute(
-                "INSERT INTO results(id, subject_id, fullname, percent, grade, response) VALUES(%s,%s,%s,%s,%s,%s)",
-                (user["id"], subject_id, user["fullname"], percent, grade, ", ".join(responses))
+                """INSERT INTO results(id, subject_id, fullname, percent, grade, response)
+                   VALUES(%s,%s,%s,%s,%s,%s)""",
+                (user["id"], subject_id, user["fullname"], percent, grade,
+                 ", ".join(str(r) for r in responses))
             )
             return {"status": True, "message": "Result saved successfully"}
         except Exception as e:
@@ -641,7 +621,6 @@ class cbtconfig:
         return self.mycursor.fetchall()
 
     def get_all_results_by_subject(self, subject_id):
-        """Return all results for a specific subject."""
         try:
             self.mycursor.execute(
                 """SELECT r.*, s.subject_name FROM results r

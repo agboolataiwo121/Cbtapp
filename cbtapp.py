@@ -19,9 +19,9 @@ class cbtapp(cbtconfig):
     # ==================================================================
     def home(self):
         while True:
-            print("""
+            print(f"""
             =============================
-             Welcome to Taiwo CBT System
+             Welcome to {self.get_schoolname()}
             =============================
             1. Register
             2. Login
@@ -44,14 +44,13 @@ class cbtapp(cbtconfig):
     # ==================================================================
     def speak_text(self, text):
         if pyttsx3 is None:
-            print("Text-to-speech not available. Install: pip install pyttsx3")
             return
         try:
             engine = pyttsx3.init()
             engine.say(text)
             engine.runAndWait()
-        except Exception as error:
-            print(f"Text-to-speech error: {error}")
+        except Exception:
+            pass
 
     # ==================================================================
     # TIMER
@@ -61,12 +60,12 @@ class cbtapp(cbtconfig):
             minutes = total_seconds // 60
             seconds = total_seconds % 60
             if total_seconds % 60 == 0 or total_seconds <= 10:
-                print(f"\nTime remaining: {minutes:02d}:{seconds:02d}")
+                print(f"\n  Time remaining: {minutes:02d}:{seconds:02d}")
             time.sleep(1)
             total_seconds -= 1
         if not timer_state["submitted"]:
             timer_state["time_up"] = True
-            print("\nTime is up. Exam submitted automatically.")
+            print("\n  Time is up! Exam submitted automatically.")
 
     # ==================================================================
     # REGISTER
@@ -75,24 +74,28 @@ class cbtapp(cbtconfig):
         print("\n--- Register ---")
         email = input("Enter email: ").strip()
         if not self.validate_email(email):
-            print("Invalid email address")
+            print("Invalid email address.")
             return
 
-        code = self.generate_verification_code()
+        code   = self.generate_verification_code()
         result = self.send_verification_email(email, code)
         print(result["message"])
-        if not result["status"]:
-            print(f"[DEV] Verification code: {code}")
+    
 
-        if input("Enter verification code: ").strip() != code:
+        entered = input("Enter verification code: ").strip()
+        if entered != code:
             print("Invalid code. Registration cancelled.")
             return
 
         fullname = input("Enter full name: ").strip()
-        role     = input("Enter role (student / staff / admin): ").strip().lower()
+        if not fullname:
+            print("Full name is required.")
+            return
+
+        role = input("Enter role (student / staff / admin): ").strip().lower()
 
         if input("Generate a strong password? yes/no: ").strip().lower() == "yes":
-            password = self.generate_strong_password()
+            password         = self.generate_strong_password()
             confirm_password = password
             print(f"Generated password: {password}  — please save this.")
         else:
@@ -123,7 +126,7 @@ class cbtapp(cbtconfig):
             if   user["role"] == "student": self.student_dashboard(user)
             elif user["role"] == "staff":   self.staff_dashboard(user)
             elif user["role"] == "admin":   self.admin_dashboard(user)
-            else: print("Unknown user role")
+            else: print("Unknown user role.")
         else:
             print(result["message"])
 
@@ -134,7 +137,7 @@ class cbtapp(cbtconfig):
         print("\n--- Reset Password ---")
         email = input("Enter your registered email: ").strip()
         if not self.validate_email(email):
-            print("Invalid email address")
+            print("Invalid email address.")
             return
         if not self.get_user_by_email(email):
             print("No account found with that email.")
@@ -143,10 +146,10 @@ class cbtapp(cbtconfig):
         code   = self.generate_verification_code()
         result = self.send_password_reset_email(email, code)
         print(result["message"])
-        if not result["status"]:
-            print(f"[DEV] Reset code: {code}")
+        # FIX #7: Removed [DEV] reset code display
 
-        if input("Enter reset code: ").strip() != code:
+        entered = input("Enter reset code: ").strip()
+        if entered != code:
             print("Invalid code. Password reset cancelled.")
             return
 
@@ -161,18 +164,18 @@ class cbtapp(cbtconfig):
     def update_profile_flow(self, user):
         print("\n--- Update Profile ---")
         print("Press Enter to keep the current value.")
-        print(f"Full name   : {user.get('fullname', '')}")
-        print(f"Phone       : {user.get('phone') or 'Not set'}")
-        print(f"Department  : {user.get('department') or 'Not set'}")
+        print(f"Full name  : {user.get('fullname', '')}")
+        print(f"Phone      : {user.get('phone') or 'Not set'}")
+        print(f"Department : {user.get('department') or 'Not set'}")
 
-        fullname   = input("New full name (Enter to skip): ").strip()
-        phone      = input("New phone (Enter to skip): ").strip()
-        department = input("New department (Enter to skip): ").strip()
+        fullname   = input("New full name (Enter to skip)  : ").strip()
+        phone      = input("New phone (Enter to skip)      : ").strip()
+        department = input("New department (Enter to skip) : ").strip()
 
         result = self.update_profile(
             user["id"],
-            fullname=fullname   or None,
-            phone=phone         or None,
+            fullname=fullname     or None,
+            phone=phone           or None,
             department=department or None
         )
         print(result["message"])
@@ -203,14 +206,11 @@ class cbtapp(cbtconfig):
 
     def _create_exam(self, user):
         print("\n--- Create Exam ---")
-
-        # Exam title
         exam_title = input("Exam title: ").strip()
         if not exam_title:
             print("Exam title cannot be empty.")
             return
 
-        # Select subject
         subjects_result = self.get_all_subjects()
         subject_id = None
         if subjects_result["status"]:
@@ -227,13 +227,11 @@ class cbtapp(cbtconfig):
         else:
             print("No subjects found. Exam will draw from all questions.")
 
-        # Number of questions
         num_questions = self._get_int_input("Number of questions: ")
         if num_questions is None or num_questions < 1:
             print("Invalid number of questions.")
             return
 
-        # Duration
         duration_minutes = self._get_int_input("Duration in minutes: ")
         if duration_minutes is None or duration_minutes < 1:
             print("Invalid duration.")
@@ -287,7 +285,6 @@ class cbtapp(cbtconfig):
 
         title = input(f"Title [{e['exam_title']}]: ").strip() or None
 
-        # Subject
         self._view_all_subjects()
         raw = input(f"Subject ID [{e['subject_id'] or 'All'}] (Enter to keep, 0 for all): ").strip()
         if raw == "0":
@@ -295,16 +292,18 @@ class cbtapp(cbtconfig):
         elif raw.isdigit():
             subject_id = int(raw)
         else:
-            subject_id = None if raw == "" else e["subject_id"]
+            subject_id = e["subject_id"] if raw == "" else None
 
-        raw_q = input(f"Number of questions [{e['num_questions']}]: ").strip()
-        num_questions = int(raw_q) if raw_q.isdigit() else None
+        raw_q    = input(f"Number of questions [{e['num_questions']}]: ").strip()
+        num_q    = int(raw_q) if raw_q.isdigit() else None
 
-        raw_d = input(f"Duration in minutes [{e['duration_minutes']}]: ").strip()
+        raw_d    = input(f"Duration in minutes [{e['duration_minutes']}]: ").strip()
         duration = int(raw_d) if raw_d.isdigit() else None
 
-        result = self.update_exam(exam_id, exam_title=title, subject_id=subject_id,
-                                  num_questions=num_questions, duration_minutes=duration)
+        result = self.update_exam(
+            exam_id, exam_title=title, subject_id=subject_id,
+            num_questions=num_q, duration_minutes=duration
+        )
         print(result["message"])
 
     def _delete_exam(self):
@@ -319,21 +318,21 @@ class cbtapp(cbtconfig):
         print(result["message"])
 
     # ==================================================================
-    # SUBJECT MANAGEMENT UI  (shared by staff & admin)
+    # SUBJECT MANAGEMENT UI
     # ==================================================================
     def subject_menu(self):
         while True:
             print("""
             --- Subject Management ---
-            1.  Add subject
-            2.  View all subjects
-            3.  View subject by ID
-            4.  Update subject
-            5.  Delete subject
-            6.  Add question to subject
-            7.  View questions by subject
-            8.  View results by subject
-            9.  Back
+            1. Add subject
+            2. View all subjects
+            3. View subject by ID
+            4. Update subject
+            5. Delete subject
+            6. Add question to subject
+            7. View questions by subject
+            8. View results by subject
+            9. Back
             """)
             choice = input("Enter choice: ").strip()
             if   choice == "1": self._add_subject()
@@ -355,31 +354,31 @@ class cbtapp(cbtconfig):
         print(result["message"])
 
     def _add_question_to_subject(self):
-        """Add a question and assign it to a chosen subject in one step."""
         subjects_result = self.get_all_subjects()
         if not subjects_result["status"]:
             print("No subjects exist yet. Please add a subject first.")
             return
-
         self._view_all_subjects()
         subject_id = self._get_int_input("Enter subject ID to add question to: ")
         if subject_id is None:
             return
-
         check = self.get_subject_by_id(subject_id)
         if not check["status"]:
             print("Subject not found.")
             return
 
-        print(f"\nAdding question to: {check['subject']['subject_name']} ({check['subject']['subject_code']})")
-        question = input("Question: ").strip()
-        option_a = input("Option A: ").strip()
-        option_b = input("Option B: ").strip()
-        option_c = input("Option C: ").strip()
-        option_d = input("Option D: ").strip()
+        print(f"\nAdding question to: {check['subject']['subject_name']} "
+              f"({check['subject']['subject_code']})")
+        question = input("Question : ").strip()
+        option_a = input("Option A : ").strip()
+        option_b = input("Option B : ").strip()
+        option_c = input("Option C : ").strip()
+        option_d = input("Option D : ").strip()
         answer   = input("Answer (A / B / C / D or full text): ").strip()
 
-        result = self.add_question(question, option_a, option_b, option_c, option_d, answer, subject_id)
+        result = self.add_question(
+            question, option_a, option_b, option_c, option_d, answer, subject_id
+        )
         print(result["message"])
 
     def _view_all_subjects(self):
@@ -433,8 +432,7 @@ class cbtapp(cbtconfig):
         subject_id = self._get_int_input("Enter subject ID to delete: ")
         if subject_id is None:
             return
-        confirm = input("Are you sure? This cannot be undone. yes/no: ").strip().lower()
-        if confirm != "yes":
+        if input("Are you sure? This cannot be undone. yes/no: ").strip().lower() != "yes":
             print("Deletion cancelled.")
             return
         result = self.delete_subject(subject_id)
@@ -466,13 +464,12 @@ class cbtapp(cbtconfig):
             for key, value in r.items():
                 if key == "response":
                     continue
-                print(f"{key.replace('_', ' ').title()}: {value}")
+                print(f"  {key.replace('_', ' ').title()}: {value}")
 
     # ==================================================================
     # DASHBOARDS
     # ==================================================================
     def question_menu(self):
-        """Dedicated question management submenu for staff and admin."""
         while True:
             print("""
             --- Question Management ---
@@ -492,8 +489,8 @@ class cbtapp(cbtconfig):
 
     def staff_dashboard(self, user):
         while True:
-            print("""
-            STAFF DASHBOARD
+            print(f"""
+            STAFF DASHBOARD — {user['fullname']}
             1. Exam management
             2. Question management
             3. Subject management
@@ -510,8 +507,8 @@ class cbtapp(cbtconfig):
 
     def admin_dashboard(self, user):
         while True:
-            print("""
-            ADMIN DASHBOARD
+            print(f"""
+            ADMIN DASHBOARD — {user['fullname']}
             1. Exam management
             2. Question management
             3. Subject management
@@ -532,8 +529,8 @@ class cbtapp(cbtconfig):
 
     def student_dashboard(self, user):
         while True:
-            print("""
-            STUDENT DASHBOARD
+            print(f"""
+            STUDENT DASHBOARD — {user['fullname']}
             1. Take exam (configured)
             2. Take exam by subject
             3. View result
@@ -551,7 +548,6 @@ class cbtapp(cbtconfig):
             else: print("Invalid choice.")
 
     def take_exam_from_config(self, user):
-        """Let a student pick a configured exam and sit it with its settings."""
         result = self.get_all_exams()
         if not result["status"]:
             print("No exams available at the moment.")
@@ -583,7 +579,6 @@ class cbtapp(cbtconfig):
     # QUESTION HELPERS
     # ==================================================================
     def create_question(self, force_no_subject=False):
-        """Create a question. Pass force_no_subject=True to skip subject selection."""
         print("\n--- Add Question ---")
         subject_id = None
 
@@ -608,7 +603,9 @@ class cbtapp(cbtconfig):
         option_d = input("Option D: ").strip()
         answer   = input("Correct answer (A / B / C / D or full text): ").strip()
 
-        result = self.add_question(question, option_a, option_b, option_c, option_d, answer, subject_id)
+        result = self.add_question(
+            question, option_a, option_b, option_c, option_d, answer, subject_id
+        )
         print(result["message"])
 
     def _display_question(self, question):
@@ -642,6 +639,10 @@ class cbtapp(cbtconfig):
     # ==================================================================
     # EXAM
     # ==================================================================
+    def _normalize_answer(self, ans):
+        ans = ans.strip().upper()
+        return ans[0] if ans else ""
+
     def take_exams(self, user, subject_id=None, num_questions=None, duration_minutes=None):
         exam = self.generate_exams(
             subject_id=subject_id,
@@ -657,9 +658,9 @@ class cbtapp(cbtconfig):
         score        = 0
         exam_minutes = exam.get("time", 30)
         timer_state  = {"time_up": False, "submitted": False}
-        use_speech   = input("Read questions aloud? yes/no: ").strip().lower()
+        use_speech   = input("Read questions aloud? yes/no: ").strip().lower() == "yes"
 
-        print(f"\n{len(questions)} questions | {exam_minutes} minutes | Timer started.")
+        print(f"\n  {len(questions)} questions | {exam_minutes} minutes | Timer started.\n")
 
         timer_thread = threading.Thread(
             target=self.exam_countdown_timer,
@@ -672,13 +673,13 @@ class cbtapp(cbtconfig):
             if timer_state["time_up"]:
                 break
 
-            print(f"\nQuestion {number}: {item['question']}")
-            print(f"A. {item['option_a']}")
-            print(f"B. {item['option_b']}")
-            print(f"C. {item['option_c']}")
-            print(f"D. {item['option_d']}")
+            print(f"\nQuestion {number}/{len(questions)}: {item['question']}")
+            print(f"  A. {item['option_a']}")
+            print(f"  B. {item['option_b']}")
+            print(f"  C. {item['option_c']}")
+            print(f"  D. {item['option_d']}")
 
-            if use_speech == "yes":
+            if use_speech:
                 self.speak_text(
                     f"Question {number}. {item['question']}. "
                     f"A. {item['option_a']}. B. {item['option_b']}. "
@@ -688,29 +689,36 @@ class cbtapp(cbtconfig):
             response = input("Your answer: ").strip()
 
             if timer_state["time_up"]:
-                print("Answer received after time expired and will not be marked.")
+                print("  Time expired. This answer will not be scored.")
                 break
 
             responses.append(response)
-            if response.lower() == item["answer"].lower().strip():
+
+            
+            if self._normalize_answer(response) == self._normalize_answer(item["answer"]):
                 score += 1
-                print("Correct")
+                print("  Correct!")
             else:
-                print("Wrong")
+                print(f"  Wrong. Correct answer: {item['answer']}")
 
         timer_state["submitted"] = True
-        percent = (score / len(questions)) * 100
+
+        total   = len(questions)
+        percent = (score / total * 100) if total > 0 else 0
         grade   = self.calculate_grade(percent)
 
-        print(f"\nName : {user['fullname']}")
-        print(f"Score: {percent:.2f}%")
-        print(f"Grade: {grade}")
+        print(f"\n  ========================")
+        print(f"  EXAM RESULT")
+        print(f"  ========================")
+        print(f"  Name  : {user['fullname']}")
+        print(f"  Score : {score}/{total} ({percent:.2f}%)")
+        print(f"  Grade : {grade}")
+        print(f"  ========================")
 
         result = self.save_result(user, percent, grade, responses, subject_id=subject_id)
         print(result["message"])
 
     def take_exam_by_subject(self, user):
-        """Let a student choose a subject then sit an exam on that subject only."""
         subjects_result = self.get_all_subjects()
         if not subjects_result["status"]:
             print(subjects_result["message"])
@@ -727,48 +735,48 @@ class cbtapp(cbtconfig):
         self.take_exams(user, subject_id=subject_id)
 
     def calculate_grade(self, percent):
-        if 70 <= percent <= 100: return "Grade A"
-        if 60 <= percent < 70:  return "Grade B"
-        if 50 <= percent < 60:  return "Grade C"
-        if 40 <= percent < 50:  return "Grade D"
-        return "You failed. You can do better"
+        if 70 <= percent <= 100: return "A — Excellent"
+        if 60 <= percent < 70:  return "B — Good"
+        if 50 <= percent < 60:  return "C — Average"
+        if 40 <= percent < 50:  return "D — Below Average"
+        return "F — Failed"
 
     # ==================================================================
-    # VIEW HELPERS
+    # VIEW RESULT
     # ==================================================================
     def view_result(self, user):
         result = self.get_result(user)
         if not result:
-            print("No result yet. Kindly take the exam.")
+            print("No result yet. Please take an exam first.")
             return
         print("\n--- Latest Result ---")
         skip = {"response"}
         for key, value in result.items():
             if key in skip:
                 continue
-            print(f"{key.replace('_',' ').title()}: {value}")
+            print(f"  {key.replace('_', ' ').title()}: {value}")
 
     def view_all_users(self):
         users = self.get_all_users()
         if not users:
-            print("No users found")
+            print("No users found.")
             return
-        for user in users:
-            print("\nUser Details")
-            for key, value in user.items():
-                print(f"  {key}: {value}")
+        print(f"\n{'ID':<10} {'Name':<25} {'Email':<30} {'Role'}")
+        print("-" * 75)
+        for u in users:
+            print(f"{u['id']:<10} {u['fullname'][:23]:<25} {u['email']:<30} {u['role']}")
 
     def view_all_results(self):
         results = self.get_all_results()
         if not results:
-            print("No results found")
+            print("No results found.")
             return
         for result in results:
             print("\n" + "-" * 40)
             for key, value in result.items():
                 if key == "response":
                     continue
-                print(f"  {key.replace('_',' ').title()}: {value}")
+                print(f"  {key.replace('_', ' ').title()}: {value}")
 
     def view_details(self, user):
         print("\n--- Your Details ---")
@@ -776,13 +784,12 @@ class cbtapp(cbtconfig):
         for key, value in user.items():
             if key in skip:
                 continue
-            print(f"{key.replace('_',' ').title()}: {value if value is not None else 'Not set'}")
+            print(f"  {key.replace('_', ' ').title()}: {value if value is not None else 'Not set'}")
 
-    # ==================================================================
-    # UTILITY
+    # ================================================================
+    # GET INPUT
     # ==================================================================
     def _get_int_input(self, prompt):
-        """Prompt for an integer. Returns None if input is invalid."""
         try:
             return int(input(prompt).strip())
         except ValueError:
