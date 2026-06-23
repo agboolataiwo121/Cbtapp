@@ -866,7 +866,7 @@ class cbtapp(cbtconfig):
         print(f"     Answer: {question['answer']}")
 
     # ==================================================================
-    # UTILITY
+    # GET INT INPUT
     # ==================================================================
     def _get_int_input(self, prompt):
         try:

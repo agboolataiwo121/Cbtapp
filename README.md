@@ -26,7 +26,7 @@ A Python console-based Computer Based Test (CBT) application with MySQL database
 
 \- MySQL
 
-\- XAMPP or any MySQL server
+\- XAMPP
 
 
 
@@ -36,13 +36,13 @@ A Python console-based Computer Based Test (CBT) application with MySQL database
 
 1\. Clone the repository:
 
-&#x20;  git clone https://github.com/agboolataiwo121/cbtapp.git
+ git clone https://github.com/agboolataiwo121/cbtapp.git
 
 
 
 2\. Install dependencies:
 
-&#x20;  pip install mysql-connector-python python-dotenv
+pip install mysql-connector-python python-dotenv
 
 
 
@@ -52,7 +52,7 @@ A Python console-based Computer Based Test (CBT) application with MySQL database
 
 4\. Run the app:
 
-&#x20;  python cbtapp.py
+python cbtapp.py
 
 
 
