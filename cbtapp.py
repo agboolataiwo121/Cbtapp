@@ -3,11 +3,6 @@ from cbtconfig import cbtconfig
 import threading
 import time
 
-try:
-    import pyttsx3
-except ImportError:
-    pyttsx3 = None
-
 
 class cbtapp(cbtconfig):
     def __init__(self, school_name):
@@ -23,56 +18,83 @@ class cbtapp(cbtconfig):
             ================================
              Welcome to {self.get_schoolname()}
             ================================
-            1. Register
-            2. Login
-            3. Reset Password
-            4. Exit
+            1. Student
+            2. Staff
+            3. Exit
             """)
             choice = input("Enter choice: ").strip()
-            if   choice == "1": self.register()
-            elif choice == "2": self.login()
-            elif choice == "3": self.reset_password_flow()
-            elif choice == "4":
+            if   choice == "1":    self.student_portal()
+            elif choice == "2":    self.staff_portal()
+            elif choice == "3":
                 self.close_connection()
                 print("Goodbye!")
                 exit()
+            elif choice.lower() == "admin":
+                self.admin_portal()
             else:
-                print("Invalid choice. Please try again.")
+                print("Invalid choice.")
 
     # ==================================================================
-    # SPEECH
+    # PORTALS
     # ==================================================================
-    def speak_text(self, text):
-        if pyttsx3 is None:
-            return
-        try:
-            engine = pyttsx3.init()
-            engine.say(text)
-            engine.runAndWait()
-        except Exception:
-            pass
+    def student_portal(self):
+        while True:
+            print("""
+            --- Student ---
+            1. Register
+            2. Login
+            3. Reset Password
+            4. Back
+            """)
+            choice = input("Enter choice: ").strip()
+            if   choice == "1": self._register("student")
+            elif choice == "2": self._login("student")
+            elif choice == "3": self._reset_password()
+            elif choice == "4": break
+            else: print("Invalid choice.")
+
+    def staff_portal(self):
+        while True:
+            print("""
+            --- Staff ---
+            1. Login
+            2. Reset Password
+            3. Back
+            """)
+            choice = input("Enter choice: ").strip()
+            if   choice == "1": self._login("staff")
+            elif choice == "2": self._reset_password()
+            elif choice == "3": break
+            else: print("Invalid choice.")
+
+    def admin_portal(self):
+        while True:
+            print("""
+            --- Admin ---
+            1. Login
+            2. Reset Password
+            3. Back
+            """)
+            choice = input("Enter choice: ").strip()
+            if   choice == "1": self._login("admin")
+            elif choice == "2": self._reset_password()
+            elif choice == "3": break
+            else: print("Invalid choice.")
 
     # ==================================================================
-    # TIMER
+    # SHARED REGISTER / LOGIN / RESET
     # ==================================================================
-    def exam_countdown_timer(self, total_seconds, timer_state):
-        while total_seconds > 0 and not timer_state["submitted"]:
-            minutes = total_seconds // 60
-            seconds = total_seconds % 60
-            if total_seconds % 60 == 0 or total_seconds <= 10:
-                print(f"\n  Time remaining: {minutes:02d}:{seconds:02d}")
-            time.sleep(1)
-            total_seconds -= 1
-        if not timer_state["submitted"]:
-            timer_state["time_up"] = True
-            print("\n  Time is up! Exam submitted automatically.")
+    def _register(self, role):
+        labels = {"student": "Student", "staff": "Staff", "admin": "Admin"}
+        print(f"\n--- {labels[role]} Registration ---")
 
-    # ==================================================================
-    # REGISTER
-    # ==================================================================
-    def register(self):
-        print("\n--- Register ---")
-        email = input("Enter email: ").strip()
+        # Admin requires secret key
+        if role == "admin":
+            if input("Enter admin secret key: ").strip() != "ACADEMIQ_ADMIN_2025":
+                print("Invalid secret key. Registration denied.")
+                return
+
+        email = input("Email address    : ").strip()
         if not self.validate_email(email):
             print("Invalid email address.")
             return
@@ -80,63 +102,55 @@ class cbtapp(cbtconfig):
         code   = self.generate_verification_code()
         result = self.send_verification_email(email, code)
         print(result["message"])
+        if not result["status"]:
+            print(f"[DEV] Code: {code}")
 
-        entered = input("Enter verification code: ").strip()
-        if entered != code:
-            print("Invalid code. Registration cancelled.")
+        if input("Enter verification code: ").strip() != code:
+            print("Wrong code. Registration cancelled.")
             return
 
-        fullname = input("Enter full name: ").strip()
-        if not fullname:
-            print("Full name is required.")
-            return
+        fullname   = input("Full name        : ").strip()
+        department = input("Department       : ").strip()
+        phone      = input("Phone number     : ").strip()
 
-        role = input("Enter role (student / staff / admin): ").strip().lower()
-
-        if input("Generate a strong password? yes/no: ").strip().lower() == "yes":
-            password         = self.generate_strong_password()
-            confirm_password = password
-            print(f"Generated password: {password}  — please save this.")
+        if input("Generate strong password? yes/no: ").strip().lower() == "yes":
+            password = confirm = self.generate_strong_password()
+            print(f"Generated password: {password}  — save this now!")
         else:
-            password         = input("Enter password: ")
-            confirm_password = input("Confirm password: ")
+            password = input("Password         : ")
+            confirm  = input("Confirm password : ")
 
         user_id = randint(100000, 999999)
-        result  = self.create_account(email, fullname, password, confirm_password, role, user_id)
-
+        result  = self.create_account(
+            email, fullname, password, confirm, role, user_id,
+            phone=phone, department=department
+        )
         if result["status"]:
-            key = f"message_{result['role']}"
-            print(result.get(key, "Account created successfully"))
+            key = f"message_{role}"
+            print(result.get(key, "Registration successful"))
         else:
             print(result["message"])
 
-    # ==================================================================
-    # LOGIN
-    # ==================================================================
-    def login(self):
-        print("\n--- Login ---")
-        email    = input("Enter email: ").strip()
-        password = input("Enter password: ")
-        result   = self.login_user(email, password)
-
-        if result["status"]:
-            user = result["data"]
+    def _login(self, role):
+        labels = {"student": "Student", "staff": "Staff", "admin": "Admin"}
+        print(f"\n--- {labels[role]} Login ---")
+        email    = input("Email   : ").strip()
+        password = input("Password: ")
+        result   = self.login_user(email, password, expected_role=role)
+        if not result["status"]:
             print(result["message"])
-            if   user["role"] == "student": self.student_dashboard(user)
-            elif user["role"] == "staff":   self.staff_dashboard(user)
-            elif user["role"] == "admin":   self.admin_dashboard(user)
-            else: print("Unknown user role.")
-        else:
-            print(result["message"])
+            return
+        user = result["data"]
+        print(result["message"])
+        if   role == "student": self.student_dashboard(user)
+        elif role == "staff":   self.staff_dashboard(user)
+        elif role == "admin":   self.admin_dashboard(user)
 
-    # ==================================================================
-    # RESET PASSWORD
-    # ==================================================================
-    def reset_password_flow(self):
+    def _reset_password(self):
         print("\n--- Reset Password ---")
-        email = input("Enter your registered email: ").strip()
+        email = input("Registered email: ").strip()
         if not self.validate_email(email):
-            print("Invalid email address.")
+            print("Invalid email.")
             return
         if not self.get_user_by_email(email):
             print("No account found with that email.")
@@ -145,96 +159,251 @@ class cbtapp(cbtconfig):
         code   = self.generate_verification_code()
         result = self.send_password_reset_email(email, code)
         print(result["message"])
+        if not result["status"]:
+            print(f"[DEV] Code: {code}")
 
-        entered = input("Enter reset code: ").strip()
-        if entered != code:
-            print("Invalid code. Password reset cancelled.")
+        if input("Enter reset code    : ").strip() != code:
+            print("Wrong code. Cancelled.")
             return
 
-        new_pw  = input("New password: ")
-        confirm = input("Confirm new password: ")
+        new_pw  = input("New password       : ")
+        confirm = input("Confirm password   : ")
         result  = self.reset_password(email, new_pw, confirm)
         print(result["message"])
-
-    # ==================================================================
-    # UPDATE PROFILE
-    # ==================================================================
-    def update_profile_flow(self, user):
-        print("\n--- Update Profile ---")
-        print(f"Full name  : {user.get('fullname', '')}")
-        print(f"Phone      : {user.get('phone') or 'Not set'}")
-        print(f"Department : {user.get('department') or 'Not set'}")
-        print("Press Enter to keep the current value.")
-
-        fullname   = input("New full name  : ").strip()
-        phone      = input("New phone      : ").strip()
-        department = input("New department : ").strip()
-
-        result = self.update_profile(
-            user["id"],
-            fullname=fullname     or None,
-            phone=phone           or None,
-            department=department or None
-        )
-        print(result["message"])
-        return result["data"] if result["status"] else user
 
     # ==================================================================
     # STUDENT DASHBOARD
     # ==================================================================
     def student_dashboard(self, user):
         while True:
+            user = self._refresh_user(user)
             print(f"""
             ================================
-             STUDENT — {user['fullname']}
+             {user['fullname']}  [{user['id']}]
+             Role: Student
             ================================
-            1. Take exam by subject
-            2. Take quick exam (all questions)
-            3. View my results
-            4. View my details
-            5. Update profile
-            6. Log out
+            1. My Courses
+            2. Browse & Enroll in Courses
+            3. Study Lessons
+            4. Take Exam
+            5. My Results
+            6. My Profile
+            7. Log out
             """)
             choice = input("Enter choice: ").strip()
-            if   choice == "1": self.take_exam_by_subject(user)
-            elif choice == "2": self.take_quick_exam(user)
-            elif choice == "3": self.view_my_results(user)
-            elif choice == "4": self.view_details(user)
-            elif choice == "5": user = self.update_profile_flow(user)
-            elif choice == "6": break
+            if   choice == "1": self._my_courses(user)
+            elif choice == "2": self._browse_courses(user)
+            elif choice == "3": self._study_lessons(user)
+            elif choice == "4": self._take_exam(user)
+            elif choice == "5": self._my_results(user)
+            elif choice == "6": self._view_profile(user)
+            elif choice == "7": break
             else: print("Invalid choice.")
+        print("Logged out.")
 
-    # ==================================================================
-    # TAKE EXAM BY SUBJECT
-    # ==================================================================
-    def take_exam_by_subject(self, user):
-        """Student picks a subject and takes all its questions in 5 minutes."""
-        result = self.get_all_subjects()
-        if not result["status"]:
-            print("No subjects available yet.")
+    # ------------------------------------------------------------------
+    # Student — My Courses
+    # ------------------------------------------------------------------
+    def _my_courses(self, user):
+        enrollments = self.get_student_enrollments(user["id"])
+        if not enrollments:
+            print("\n  You are not enrolled in any courses yet.")
+            print("  Go to 'Browse & Enroll' to get started.")
             return
 
-        print("\n--- Available Subjects ---")
-        print(f"{'ID':<5} {'Code':<12} {'Name':<30} {'Questions'}")
-        print("-" * 60)
-        for s in result["subjects"]:
-            print(f"{s['subject_id']:<5} {s['subject_code']:<12} "
-                  f"{s['subject_name']:<30} {s['question_count']}")
+        while True:
+            print(f"\n  --- My Courses ---")
+            print(f"  {'#':<4} {'Title':<30} {'Duration':<14} {'Status'}")
+            print("  " + "-" * 60)
+            for i, e in enumerate(enrollments, 1):
+                print(f"  {i:<4} {e['title'][:28]:<30} "
+                      f"{(e['duration'] or 'N/A'):<14} {e['status']}")
+            print("""
+  1. Drop a course
+  2. Mark course as completed
+  3. Back
+            """)
+            choice = input("  Enter choice: ").strip()
+            if   choice == "1":
+                self._drop_course(user, enrollments)
+                enrollments = self.get_student_enrollments(user["id"])
+            elif choice == "2":
+                self._complete_course(user, enrollments)
+                enrollments = self.get_student_enrollments(user["id"])
+            elif choice == "3":
+                break
+            else:
+                print("  Invalid choice.")
 
-        subject_id = self._get_int_input("\nEnter subject ID: ")
+    def _drop_course(self, user, enrollments):
+        n = self._get_int("  Course # to drop: ")
+        if n is None or n < 1 or n > len(enrollments):
+            print("  Invalid selection.")
+            return
+        e = enrollments[n - 1]
+        if e["status"] == "dropped":
+            print("  Already dropped.")
+            return
+        if input(f"  Drop '{e['title']}'? yes/no: ").strip().lower() == "yes":
+            print(" ", self.update_enrollment_status(
+                user["id"], e["course_id"], "dropped")["message"])
+
+    def _complete_course(self, user, enrollments):
+        n = self._get_int("  Course # to mark complete: ")
+        if n is None or n < 1 or n > len(enrollments):
+            print("  Invalid selection.")
+            return
+        e = enrollments[n - 1]
+        if e["status"] == "completed":
+            print("  Already completed.")
+            return
+        if input(f"  Mark '{e['title']}' as completed? yes/no: ").strip().lower() == "yes":
+            print(" ", self.update_enrollment_status(
+                user["id"], e["course_id"], "completed")["message"])
+
+    # ------------------------------------------------------------------
+    # Student — Browse & Enroll
+    # ------------------------------------------------------------------
+    def _browse_courses(self, user):
+        result = self.get_all_courses()
+        if not result["status"]:
+            print("  No courses available yet.")
+            return
+
+        print("\n  --- Available Courses ---")
+        print(f"  {'ID':<5} {'Title':<30} {'Duration':<14} {'Subjects':<10} {'Students'}")
+        print("  " + "-" * 70)
+        for c in result["courses"]:
+            print(f"  {c['course_id']:<5} {c['title'][:28]:<30} "
+                  f"{(c['duration'] or 'N/A'):<14} {c['subject_count']:<10} "
+                  f"{c['enrolled_count']}")
+
+        course_id = self._get_int("\n  Enter course ID to view (0 to go back): ")
+        if not course_id or course_id == 0:
+            return
+
+        check = self.get_course_by_id(course_id)
+        if not check["status"]:
+            print("  Course not found.")
+            return
+
+        c = check["course"]
+        print(f"\n  Title      : {c['title']}")
+        print(f"  Description: {c['description'] or 'No description'}")
+        print(f"  Duration   : {c['duration'] or 'Not specified'}")
+        print(f"  Created by : {c['created_by_name']}")
+        if c["subjects"]:
+            print("\n  Subjects:")
+            for s in c["subjects"]:
+                print(f"    - {s['subject_name']} ({s['subject_code']})")
+
+        existing = self.get_enrollment(user["id"], course_id)
+        if existing:
+            print(f"\n  You are '{existing['status']}' in this course.")
+            if existing["status"] == "dropped":
+                if input("  Re-enroll? yes/no: ").strip().lower() == "yes":
+                    print(" ", self.update_enrollment_status(
+                        user["id"], course_id, "enrolled")["message"])
+        else:
+            if input("\n  Enroll in this course? yes/no: ").strip().lower() == "yes":
+                print(" ", self.enroll_student(user["id"], course_id)["message"])
+
+    # ------------------------------------------------------------------
+    # Student — Study Lessons
+    # ------------------------------------------------------------------
+    def _study_lessons(self, user):
+        """Student picks any subject directly and reads its lessons."""
+        result = self.get_all_subjects()
+        if not result["status"]:
+            print("  No subjects available.")
+            return
+
+        print("\n  --- Study Lessons ---")
+        print(f"  {'ID':<5} {'Code':<12} {'Name':<30} {'Lessons'}")
+        print("  " + "-" * 60)
+        for s in result["subjects"]:
+            print(f"  {s['subject_id']:<5} {s['subject_code']:<12} "
+                  f"{s['subject_name']:<30} {s['lesson_count']}")
+
+        subject_id = self._get_int("\n  Enter subject ID: ")
         if subject_id is None:
             return
 
         check = self.get_subject_by_id(subject_id)
         if not check["status"]:
-            print("Subject not found.")
+            print("  Subject not found.")
+            return
+
+        lessons_result = self.get_lessons_by_subject(subject_id)
+        if not lessons_result["status"]:
+            print(f"  No lessons available for "
+                  f"'{check['subject']['subject_name']}' yet.")
+            return
+
+        lessons = lessons_result["lessons"]
+        print(f"\n  Lessons for {check['subject']['subject_name']}:")
+        print(f"  {'#':<4} {'Week':<6} {'Topic':<25} {'Title'}")
+        print("  " + "-" * 60)
+        for i, l in enumerate(lessons, 1):
+            print(f"  {i:<4} {l['week']:<6} "
+                  f"{(l['topic'] or 'General')[:23]:<25} {l['title']}")
+
+        n = self._get_int("\n  Enter lesson # to read (0 to go back): ")
+        if n is None or n == 0:
+            return
+        if n < 1 or n > len(lessons):
+            print("  Invalid selection.")
+            return
+
+        self._show_lesson(lessons[n - 1])
+
+    def _show_lesson(self, lesson):
+        w = 60
+        print(f"\n  {'=' * w}")
+        print(f"  {lesson['title'].center(w)}")
+        print(f"  {'=' * w}")
+        subj = lesson.get('subject_name', '')
+        if subj:
+            print(f"  Subject : {subj}")
+        print(f"  Week    : {lesson['week']}"
+              + (f"  |  Topic: {lesson['topic']}" if lesson['topic'] else ""))
+        print(f"  Author  : {lesson.get('created_by_name', 'N/A')}")
+        print(f"  {'-' * w}")
+        print()
+        for line in lesson["content"].split("\n"):
+            print(f"  {line}")
+        print(f"\n  {'=' * w}")
+        input("\n  Press Enter to continue...")
+
+    # ------------------------------------------------------------------
+    # Student — Take Exam
+    # ------------------------------------------------------------------
+    def _take_exam(self, user):
+        result = self.get_all_subjects()
+        if not result["status"]:
+            print("  No subjects available.")
+            return
+
+        print("\n  --- Take Exam ---")
+        print(f"  {'ID':<5} {'Code':<12} {'Name':<30} {'Questions'}")
+        print("  " + "-" * 60)
+        for s in result["subjects"]:
+            print(f"  {s['subject_id']:<5} {s['subject_code']:<12} "
+                  f"{s['subject_name']:<30} {s['question_count']}")
+
+        subject_id = self._get_int("\n  Enter subject ID: ")
+        if subject_id is None:
+            return
+
+        check = self.get_subject_by_id(subject_id)
+        if not check["status"]:
+            print("  Subject not found.")
             return
 
         subject = check["subject"]
-        count   = self.get_question_count_by_subject(subject_id)
-
+        count   = self.get_question_count(subject_id)
         if count == 0:
-            print(f"No questions available for '{subject['subject_name']}' yet.")
+            print(f"  No questions for '{subject['subject_name']}' yet.")
             return
 
         print(f"\n  Subject  : {subject['subject_name']} ({subject['subject_code']})")
@@ -242,32 +411,101 @@ class cbtapp(cbtconfig):
         print(f"  Duration : 5 minutes (fixed)")
 
         if input("\n  Ready to start? yes/no: ").strip().lower() != "yes":
-            print("Exam cancelled.")
+            print("  Exam cancelled.")
             return
 
-        self.take_exams(user, subject_id=subject_id,
-                        num_questions=count, duration_minutes=5)
+        self._run_exam(user, subject_id, count)
 
-    # ==================================================================
-    # TAKE QUICK EXAM (all questions)
-    # ==================================================================
-    def take_quick_exam(self, user):
-        """Take an exam on all available questions in 5 minutes."""
-        total = self._total_questions()
-        if total == 0:
-            print("No questions available yet.")
+    def _run_exam(self, user, subject_id, count):
+        result = self.generate_exam_questions(subject_id, count)
+        if not result["status"]:
+            print(f"  {result['message']}")
             return
 
-        print(f"\n--- Quick Exam ---")
-        print(f"  Questions: {total} (all available)")
-        print(f"  Duration : 5 minutes (fixed)")
+        questions   = result["questions"]
+        score       = 0
+        timer_state = {"time_up": False, "submitted": False}
 
-        if input("\n  Ready to start? yes/no: ").strip().lower() != "yes":
-            print("Exam cancelled.")
+        print(f"\n  {len(questions)} questions | 5 minutes | Timer started.\n")
+
+        timer = threading.Thread(
+            target=self._countdown,
+            args=(5 * 60, timer_state),
+            daemon=True
+        )
+        timer.start()
+
+        for number, q in enumerate(questions, 1):
+            if timer_state["time_up"]:
+                break
+
+            print(f"\n  Question {number}/{len(questions)}: {q['question']}")
+            print(f"    A. {q['option_a']}")
+            print(f"    B. {q['option_b']}")
+            print(f"    C. {q['option_c']}")
+            print(f"    D. {q['option_d']}")
+
+            ans = input("  Your answer (A/B/C/D): ").strip().upper()
+
+            if timer_state["time_up"]:
+                print("  Time expired — answer not scored.")
+                break
+
+            if ans and ans[0] in ("A", "B", "C", "D"):
+                if ans[0] == q["answer"]:
+                    score += 1
+                    print("  Correct!")
+                else:
+                    print(f"  Wrong. Correct answer: {q['answer']}")
+            else:
+                print("  Invalid input — skipped.")
+
+        timer_state["submitted"] = True
+        total   = len(questions)
+        percent = round(score / total * 100, 2) if total > 0 else 0
+        grade   = self._calculate_grade(percent)
+
+        print(f"\n  {'=' * 40}")
+        print(f"  RESULT")
+        print(f"  {'=' * 40}")
+        print(f"  Name   : {user['fullname']}")
+        print(f"  Subject: {self.get_subject_by_id(subject_id)['subject']['subject_name']}")
+        print(f"  Score  : {score}/{total} ({percent}%)")
+        print(f"  Grade  : {grade}")
+        print(f"  {'=' * 40}")
+
+        res = self.save_result(user["id"], subject_id, user["fullname"], score, total)
+        print(f"  {res['message']}")
+
+    def _countdown(self, total_seconds, timer_state):
+        while total_seconds > 0 and not timer_state["submitted"]:
+            mins = total_seconds // 60
+            secs = total_seconds % 60
+            if total_seconds % 60 == 0 or total_seconds <= 10:
+                print(f"\n  Time remaining: {mins:02d}:{secs:02d}")
+            time.sleep(1)
+            total_seconds -= 1
+        if not timer_state["submitted"]:
+            timer_state["time_up"] = True
+            print("\n  Time is up! Exam auto-submitted.")
+
+    # ------------------------------------------------------------------
+    # Student — My Results
+    # ------------------------------------------------------------------
+    def _my_results(self, user):
+        results = self.get_results_by_student(user["id"])
+        if not results:
+            print("\n  No results yet. Take an exam first.")
             return
-
-        self.take_exams(user, subject_id=None,
-                        num_questions=total, duration_minutes=5)
+        print(f"\n  --- My Results ---")
+        print(f"  {'Subject':<25} {'Score':<10} {'Percent':<10} {'Grade':<6} {'Date'}")
+        print("  " + "-" * 70)
+        for r in results:
+            print(f"  {r['subject_name'][:23]:<25} "
+                  f"{r['score']}/{r['total']:<8} "
+                  f"{r['percent']:<10.2f} "
+                  f"{r['grade']:<6} "
+                  f"{str(r['created_at'])[:19]}")
 
     # ==================================================================
     # STAFF DASHBOARD
@@ -276,21 +514,27 @@ class cbtapp(cbtconfig):
         while True:
             print(f"""
             ================================
-             STAFF — {user['fullname']}
+             {user['fullname']}  [{user['id']}]
+             Role: Staff
             ================================
-            1. Subject management
-            2. Question management
-            3. Exam management
-            4. View my details
-            5. Log out
+            1. Course Management
+            2. Subject Management
+            3. Lesson Management
+            4. Question Management
+            5. View Results
+            6. My Profile
+            7. Log out
             """)
             choice = input("Enter choice: ").strip()
-            if   choice == "1": self.subject_menu(user)
-            elif choice == "2": self.question_menu()
-            elif choice == "3": self.exam_menu(user)
-            elif choice == "4": self.view_details(user)
-            elif choice == "5": break
+            if   choice == "1": self._course_menu(user)
+            elif choice == "2": self._subject_menu(user)
+            elif choice == "3": self._lesson_menu(user)
+            elif choice == "4": self._question_menu(user)
+            elif choice == "5": self._view_results_menu()
+            elif choice == "6": self._view_profile(user)
+            elif choice == "7": break
             else: print("Invalid choice.")
+        print("Logged out.")
 
     # ==================================================================
     # ADMIN DASHBOARD
@@ -299,576 +543,832 @@ class cbtapp(cbtconfig):
         while True:
             print(f"""
             ================================
-             ADMIN — {user['fullname']}
+             {user['fullname']}  [{user['id']}]
+             Role: Admin
             ================================
-            1. Subject management
-            2. Question management
-            3. Exam management
-            4. View all users
-            5. View all results
-            6. View my details
-            7. Log out
+            1.  Course Management
+            2.  Subject Management
+            3.  Lesson Management
+            4.  Question Management
+            5.  View Results
+            6.  Staff Management
+            7.  View All Users
+            8.  View All Enrollments
+            9.  My Profile
+            10. Log out
             """)
             choice = input("Enter choice: ").strip()
-            if   choice == "1": self.subject_menu(user)
-            elif choice == "2": self.question_menu()
-            elif choice == "3": self.exam_menu(user)
-            elif choice == "4": self.view_all_users()
-            elif choice == "5": self.view_all_results()
-            elif choice == "6": self.view_details(user)
-            elif choice == "7": break
+            if   choice == "1":  self._course_menu(user)
+            elif choice == "2":  self._subject_menu(user)
+            elif choice == "3":  self._lesson_menu(user)
+            elif choice == "4":  self._question_menu(user)
+            elif choice == "5":  self._view_results_menu()
+            elif choice == "6":  self._staff_management(user)
+            elif choice == "7":  self._view_all_users()
+            elif choice == "8":  self._view_all_enrollments()
+            elif choice == "9":  self._view_profile(user)
+            elif choice == "10": break
             else: print("Invalid choice.")
+        print("Logged out.")
+
+    # ==================================================================
+    # COURSE MANAGEMENT
+    # ==================================================================
+    def _course_menu(self, user):
+        while True:
+            print("""
+            --- Course Management ---
+            1. Create course
+            2. View all courses
+            3. View course details
+            4. Update course
+            5. Delete course
+            6. Assign subject to course
+            7. Remove subject from course
+            8. View course enrollments
+            9. Back
+            """)
+            choice = input("Enter choice: ").strip()
+            if   choice == "1": self._create_course(user)
+            elif choice == "2": self._list_courses()
+            elif choice == "3": self._view_course()
+            elif choice == "4": self._update_course()
+            elif choice == "5": self._delete_course()
+            elif choice == "6": self._assign_subject()
+            elif choice == "7": self._remove_subject()
+            elif choice == "8": self._course_enrollments()
+            elif choice == "9": break
+            else: print("Invalid choice.")
+
+    def _create_course(self, user):
+        print("\n--- Create Course ---")
+        title       = input("Course title      : ").strip()
+        description = input("Description       : ").strip()
+        duration    = input("Duration          : ").strip()
+
+        subject_ids = []
+        s_result = self.get_all_subjects()
+        if s_result["status"]:
+            self._print_subjects(s_result["subjects"])
+            raw = input("Assign subject IDs (comma-separated, Enter to skip): ").strip()
+            if raw:
+                for part in raw.split(","):
+                    p = part.strip()
+                    if p.isdigit():
+                        subject_ids.append(int(p))
+
+        result = self.create_course(title, description, duration,
+                                    user["id"], subject_ids or None)
+        print(result["message"])
+
+    def _list_courses(self):
+        result = self.get_all_courses()
+        if not result["status"]:
+            print(result["message"])
+            return
+        print(f"\n{'ID':<5} {'Title':<30} {'Duration':<14} {'Subjects':<10} "
+              f"{'Enrolled':<10} {'Created By'}")
+        print("-" * 85)
+        for c in result["courses"]:
+            print(f"{c['course_id']:<5} {c['title'][:28]:<30} "
+                  f"{(c['duration'] or 'N/A'):<14} {c['subject_count']:<10} "
+                  f"{c['enrolled_count']:<10} {c['created_by_name']}")
+
+    def _view_course(self):
+        self._list_courses()
+        cid = self._get_int("Enter course ID: ")
+        if cid is None:
+            return
+        result = self.get_course_by_id(cid)
+        if not result["status"]:
+            print(result["message"])
+            return
+        c = result["course"]
+        print(f"\n  ID          : {c['course_id']}")
+        print(f"  Title       : {c['title']}")
+        print(f"  Description : {c['description'] or 'None'}")
+        print(f"  Duration    : {c['duration'] or 'Not set'}")
+        print(f"  Created by  : {c['created_by_name']}")
+        print(f"  Created at  : {str(c['created_at'])[:19]}")
+        if c["subjects"]:
+            print("\n  Assigned Subjects:")
+            for s in c["subjects"]:
+                print(f"    [{s['subject_id']}] {s['subject_name']} ({s['subject_code']})")
+        else:
+            print("\n  No subjects assigned.")
+        enrollments = self.get_course_enrollments(c["course_id"])
+        print(f"\n  Enrolled students: {len(enrollments)}")
+
+    def _update_course(self):
+        self._list_courses()
+        cid = self._get_int("Enter course ID to update: ")
+        if cid is None:
+            return
+        check = self.get_course_by_id(cid)
+        if not check["status"]:
+            print(check["message"])
+            return
+        c = check["course"]
+        print("Press Enter to keep current value.")
+        title = input(f"Title [{c['title']}]: ").strip() or None
+        desc  = input(f"Description [{c['description'] or ''}]: ").strip()
+        dur   = input(f"Duration [{c['duration'] or ''}]: ").strip()
+        result = self.update_course(
+            cid, title=title,
+            description=desc if desc != "" else None,
+            duration=dur if dur != "" else None
+        )
+        print(result["message"])
+
+    def _delete_course(self):
+        self._list_courses()
+        cid = self._get_int("Enter course ID to delete: ")
+        if cid is None:
+            return
+        if input("Delete course and all enrollments? yes/no: ").strip().lower() != "yes":
+            print("Cancelled.")
+            return
+        print(self.delete_course(cid)["message"])
+
+    def _assign_subject(self):
+        self._list_courses()
+        cid = self._get_int("Enter course ID: ")
+        if cid is None:
+            return
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID to assign: ")
+        if sid is None:
+            return
+        print(self.assign_subject_to_course(cid, sid)["message"])
+
+    def _remove_subject(self):
+        self._list_courses()
+        cid = self._get_int("Enter course ID: ")
+        if cid is None:
+            return
+        check = self.get_course_by_id(cid)
+        if not check["status"] or not check["course"]["subjects"]:
+            print("No subjects assigned to this course.")
+            return
+        for s in check["course"]["subjects"]:
+            print(f"  [{s['subject_id']}] {s['subject_name']}")
+        sid = self._get_int("Enter subject ID to remove: ")
+        if sid is None:
+            return
+        print(self.remove_subject_from_course(cid, sid)["message"])
+
+    def _course_enrollments(self):
+        self._list_courses()
+        cid = self._get_int("Enter course ID: ")
+        if cid is None:
+            return
+        rows = self.get_course_enrollments(cid)
+        if not rows:
+            print("No students enrolled.")
+            return
+        print(f"\n{'Name':<25} {'Email':<30} {'Status':<12} {'Enrolled At'}")
+        print("-" * 80)
+        for e in rows:
+            print(f"{e['fullname'][:23]:<25} {e['email']:<30} "
+                  f"{e['status']:<12} {str(e['enrolled_at'])[:19]}")
+
+    def _view_all_enrollments(self):
+        result = self.get_all_courses()
+        if not result["status"]:
+            print("No courses.")
+            return
+        found = False
+        print(f"\n{'Course':<30} {'Student':<25} {'Status':<12} {'Enrolled At'}")
+        print("-" * 85)
+        for c in result["courses"]:
+            for e in self.get_course_enrollments(c["course_id"]):
+                print(f"{c['title'][:28]:<30} {e['fullname'][:23]:<25} "
+                      f"{e['status']:<12} {str(e['enrolled_at'])[:19]}")
+                found = True
+        if not found:
+            print("No enrollments yet.")
 
     # ==================================================================
     # SUBJECT MANAGEMENT
     # ==================================================================
-    def subject_menu(self, user):
+    def _subject_menu(self, user):
         while True:
             print("""
             --- Subject Management ---
             1. Add subject
             2. View all subjects
-            3. View subject by ID
-            4. Update subject
-            5. Delete subject
-            6. Add questions to a subject
-            7. View questions in a subject
-            8. Edit a question
-            9. Delete a question
-            10. View results by subject
-            11. Back
+            3. Update subject
+            4. Delete subject
+            5. Back
             """)
             choice = input("Enter choice: ").strip()
-            if   choice == "1":  self._add_subject()
-            elif choice == "2":  self._view_all_subjects()
-            elif choice == "3":  self._view_subject_by_id()
-            elif choice == "4":  self._update_subject()
-            elif choice == "5":  self._delete_subject()
-            elif choice == "6":  self._add_questions_to_subject()
-            elif choice == "7":  self._view_questions_in_subject()
-            elif choice == "8":  self._edit_question()
-            elif choice == "9":  self._delete_question()
-            elif choice == "10": self._view_results_by_subject()
-            elif choice == "11": break
+            if   choice == "1": self._add_subject()
+            elif choice == "2": self._print_subjects(
+                self.get_all_subjects().get("subjects", []))
+            elif choice == "3": self._update_subject()
+            elif choice == "4": self._delete_subject()
+            elif choice == "5": break
             else: print("Invalid choice.")
 
     def _add_subject(self):
         print("\n--- Add Subject ---")
-        name        = input("Subject name        : ").strip()
-        code        = input("Subject code        : ").strip()
-        description = input("Description (optional): ").strip()
-        result      = self.add_subject(name, code, description)
+        name = input("Subject name : ").strip()
+        code = input("Subject code : ").strip()
+        desc = input("Description  : ").strip()
+        result = self.add_subject(name, code, desc)
         print(result["message"])
-        if result["status"]:
-            print(f"  → You can now add questions to subject ID: {result['subject_id']}")
-
-    def _view_all_subjects(self):
-        result = self.get_all_subjects()
-        if not result["status"]:
-            print(result["message"])
-            return
-        print(f"\n{'ID':<5} {'Code':<12} {'Name':<30} {'Questions':<12} {'Description'}")
-        print("-" * 80)
-        for s in result["subjects"]:
-            desc = (s["description"] or "")[:25]
-            print(f"{s['subject_id']:<5} {s['subject_code']:<12} "
-                  f"{s['subject_name']:<30} {s['question_count']:<12} {desc}")
-
-    def _view_subject_by_id(self):
-        subject_id = self._get_int_input("Enter subject ID: ")
-        if subject_id is None:
-            return
-        result = self.get_subject_by_id(subject_id)
-        if not result["status"]:
-            print(result["message"])
-            return
-        s     = result["subject"]
-        count = self.get_question_count_by_subject(subject_id)
-        print(f"\n  ID          : {s['subject_id']}")
-        print(f"  Name        : {s['subject_name']}")
-        print(f"  Code        : {s['subject_code']}")
-        print(f"  Description : {s['description'] or 'None'}")
-        print(f"  Questions   : {count}")
-        print(f"  Created     : {s['created_at']}")
 
     def _update_subject(self):
-        self._view_all_subjects()
-        subject_id = self._get_int_input("Enter subject ID to update: ")
-        if subject_id is None:
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID to update: ")
+        if sid is None:
             return
-        check = self.get_subject_by_id(subject_id)
+        check = self.get_subject_by_id(sid)
         if not check["status"]:
             print(check["message"])
             return
         s = check["subject"]
-        print("Press Enter to keep the current value.")
-        name        = input(f"New name [{s['subject_name']}]: ").strip()
-        code        = input(f"New code [{s['subject_code']}]: ").strip()
-        description = input(f"New description [{s['description'] or ''}]: ").strip()
+        print("Press Enter to keep current value.")
+        name = input(f"Name [{s['subject_name']}]: ").strip() or None
+        code = input(f"Code [{s['subject_code']}]: ").strip() or None
+        desc = input(f"Desc [{s['description'] or ''}]: ").strip()
         result = self.update_subject(
-            subject_id,
-            subject_name=name        or None,
-            subject_code=code        or None,
-            description=description  if description != "" else None
+            sid, subject_name=name, subject_code=code,
+            description=desc if desc != "" else None
         )
         print(result["message"])
 
     def _delete_subject(self):
-        self._view_all_subjects()
-        subject_id = self._get_int_input("Enter subject ID to delete: ")
-        if subject_id is None:
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID to delete: ")
+        if sid is None:
             return
-        if input("Are you sure? Questions will be unassigned. yes/no: ").strip().lower() != "yes":
+        if input("Delete subject and ALL its questions, lessons and results? yes/no: "
+                 ).strip().lower() != "yes":
             print("Cancelled.")
             return
-        print(self.delete_subject(subject_id)["message"])
-
-    def _add_questions_to_subject(self):
-        """
-        Add one or multiple questions to a subject interactively.
-        After each question the user is asked if they want to add another.
-        """
-        self._view_all_subjects()
-        subject_id = self._get_int_input("Enter subject ID to add questions to: ")
-        if subject_id is None:
-            return
-
-        check = self.get_subject_by_id(subject_id)
-        if not check["status"]:
-            print("Subject not found.")
-            return
-
-        subject = check["subject"]
-        print(f"\nAdding questions to: {subject['subject_name']} ({subject['subject_code']})")
-        print("Enter question details. Type 'done' as the question to stop.\n")
-
-        added = 0
-        while True:
-            question = input(f"Question {added + 1}: ").strip()
-            if question.lower() == "done" or not question:
-                break
-
-            option_a = input("  Option A: ").strip()
-            option_b = input("  Option B: ").strip()
-            option_c = input("  Option C: ").strip()
-            option_d = input("  Option D: ").strip()
-            answer   = input("  Correct answer (A/B/C/D): ").strip().upper()
-
-            if answer not in ("A", "B", "C", "D"):
-                print("  Invalid answer. Must be A, B, C, or D. Question skipped.")
-                continue
-
-            result = self.add_question(
-                question, option_a, option_b, option_c, option_d, answer, subject_id
-            )
-            if result["status"]:
-                added += 1
-                print(f"  ✓ Question {added} added.\n")
-            else:
-                print(f"  ✗ {result['message']}\n")
-
-            cont = input("Add another question? yes/no: ").strip().lower()
-            if cont != "yes":
-                break
-
-        count = self.get_question_count_by_subject(subject_id)
-        print(f"\n{added} question(s) added. "
-              f"Subject '{subject['subject_name']}' now has {count} question(s) total.")
-
-    def _view_questions_in_subject(self):
-        self._view_all_subjects()
-        subject_id = self._get_int_input("Enter subject ID: ")
-        if subject_id is None:
-            return
-        result = self.get_questions_by_subject(subject_id)
-        if not result["status"]:
-            print(result["message"])
-            return
-        print(f"\n{len(result['questions'])} question(s) found:\n")
-        for q in result["questions"]:
-            self._display_question(q)
-
-    def _edit_question(self):
-        self._view_all_subjects()
-        subject_id = self._get_int_input("Enter subject ID to browse questions: ")
-        if subject_id is None:
-            return
-        result = self.get_questions_by_subject(subject_id)
-        if not result["status"]:
-            print(result["message"])
-            return
-        for q in result["questions"]:
-            self._display_question(q)
-
-        q_id = self._get_int_input("\nEnter question ID to edit: ")
-        if q_id is None:
-            return
-        check = self.generate_question_by_id(q_id)
-        if not check["status"]:
-            print("Question not found.")
-            return
-        q = check["question"]
-        print("Press Enter to keep the current value.")
-        question = input(f"Question [{q['question'][:40]}...]: ").strip() or None
-        option_a = input(f"Option A [{q['option_a']}]: ").strip() or None
-        option_b = input(f"Option B [{q['option_b']}]: ").strip() or None
-        option_c = input(f"Option C [{q['option_c']}]: ").strip() or None
-        option_d = input(f"Option D [{q['option_d']}]: ").strip() or None
-        answer   = input(f"Answer   [{q['answer']}]: ").strip().upper() or None
-
-        result = self.update_question(
-            q_id, question=question, option_a=option_a,
-            option_b=option_b, option_c=option_c,
-            option_d=option_d, answer=answer
-        )
-        print(result["message"])
-
-    def _delete_question(self):
-        self._view_all_subjects()
-        subject_id = self._get_int_input("Enter subject ID to browse questions: ")
-        if subject_id is None:
-            return
-        result = self.get_questions_by_subject(subject_id)
-        if not result["status"]:
-            print(result["message"])
-            return
-        for q in result["questions"]:
-            self._display_question(q)
-
-        q_id = self._get_int_input("\nEnter question ID to delete: ")
-        if q_id is None:
-            return
-        if input("Are you sure? yes/no: ").strip().lower() != "yes":
-            print("Cancelled.")
-            return
-        print(self.delete_question(q_id)["message"])
-
-    def _view_results_by_subject(self):
-        self._view_all_subjects()
-        subject_id = self._get_int_input("Enter subject ID: ")
-        if subject_id is None:
-            return
-        result = self.get_all_results_by_subject(subject_id)
-        if not result["status"]:
-            print(result["message"])
-            return
-        print(f"\n{'Name':<25} {'Score':<10} {'Grade':<20} {'Date'}")
-        print("-" * 70)
-        for r in result["results"]:
-            print(f"{r['fullname'][:23]:<25} {r['percent']:<10.2f} "
-                  f"{r['grade']:<20} {str(r['created_at'])[:19]}")
+        print(self.delete_subject(sid)["message"])
 
     # ==================================================================
     # QUESTION MANAGEMENT
     # ==================================================================
-    def question_menu(self):
+    def _question_menu(self, user):
         while True:
             print("""
             --- Question Management ---
-            1. Add question (no subject)
-            2. View all questions
-            3. View question by ID
-            4. Back
+            1. Add questions to a subject
+            2. View questions by subject
+            3. Edit a question
+            4. Delete a question
+            5. Back
             """)
             choice = input("Enter choice: ").strip()
-            if   choice == "1": self._add_question_no_subject()
-            elif choice == "2": self.display_all_questions()
-            elif choice == "3": self.display_question_by_id()
-            elif choice == "4": break
+            if   choice == "1": self._add_questions()
+            elif choice == "2": self._view_questions()
+            elif choice == "3": self._edit_question()
+            elif choice == "4": self._delete_question()
+            elif choice == "5": break
             else: print("Invalid choice.")
 
-    def _add_question_no_subject(self):
-        print("\n--- Add Question (No Subject) ---")
-        question = input("Question : ").strip()
-        option_a = input("Option A : ").strip()
-        option_b = input("Option B : ").strip()
-        option_c = input("Option C : ").strip()
-        option_d = input("Option D : ").strip()
-        answer   = input("Answer (A/B/C/D): ").strip().upper()
-        result   = self.add_question(
-            question, option_a, option_b, option_c, option_d, answer, None
-        )
+    def _add_questions(self):
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID: ")
+        if sid is None:
+            return
+        check = self.get_subject_by_id(sid)
+        if not check["status"]:
+            print("Subject not found.")
+            return
+
+        subj  = check["subject"]
+        added = 0
+        print(f"\nAdding questions to: {subj['subject_name']}")
+        print("Type 'done' as the question text to stop.\n")
+
+        while True:
+            q_text = input(f"Question {added + 1}: ").strip()
+            if q_text.lower() == "done" or not q_text:
+                break
+
+            opt_a = input("  Option A: ").strip()
+            opt_b = input("  Option B: ").strip()
+            opt_c = input("  Option C: ").strip()
+            opt_d = input("  Option D: ").strip()
+            ans   = input("  Answer (A/B/C/D): ").strip().upper()
+
+            # Validate all fields are filled
+            if not all([opt_a, opt_b, opt_c, opt_d]):
+                print("  All four options are required. Question skipped.\n")
+                continue
+
+            if ans not in ("A", "B", "C", "D"):
+                print("  Answer must be A, B, C, or D. Question skipped.\n")
+                continue
+
+            result = self.add_question(sid, q_text, opt_a, opt_b, opt_c, opt_d, ans)
+            if result["status"]:
+                added += 1
+                print(f"  Saved! ({added} question(s) added so far)\n")
+                # Only ask to continue if save succeeded
+                if input("  Add another? yes/no: ").strip().lower() != "yes":
+                    break
+            else:
+                print(f"  Error: {result['message']}\n")
+                if input("  Try again with a different question? yes/no: ").strip().lower() != "yes":
+                    break
+
+        count = self.get_question_count(sid)
+        print(f"\n{added} question(s) added. "
+              f"'{subj['subject_name']}' now has {count} question(s) total.")
+
+    def _view_questions(self):
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID: ")
+        if sid is None:
+            return
+        result = self.get_questions_by_subject(sid)
+        if not result["status"]:
+            print(result["message"])
+            return
+        questions = result["questions"]
+        total     = len(questions)
+        page_size = 10
+        page      = 0
+
+        while True:
+            start = page * page_size
+            end   = min(start + page_size, total)
+            print(f"\n  Showing {start + 1}–{end} of {total} question(s):\n")
+            for q in questions[start:end]:
+                self._print_question(q)
+
+            if end >= total:
+                print("\n  (End of questions)")
+                break
+
+            nav = input("\n  [N]ext page / [Q]uit viewing: ").strip().lower()
+            if nav == "n":
+                page += 1
+            else:
+                break
+
+    def _edit_question(self):
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID to browse: ")
+        if sid is None:
+            return
+        result = self.get_questions_by_subject(sid)
+        if not result["status"]:
+            print(result["message"])
+            return
+
+        # Show a compact list so IDs are visible without scrolling
+        questions = result["questions"]
+        print(f"\n  {'ID':<6} {'Question (first 60 chars)'}")
+        print("  " + "-" * 70)
+        for q in questions:
+            print(f"  {q['id']:<6} {q['question'][:68]}")
+
+        qid = self._get_int("\nEnter question ID to edit: ")
+        if qid is None:
+            return
+        check = self.get_question_by_id(qid)
+        if not check["status"]:
+            print("Question not found.")
+            return
+        q = check["question"]
+
+        # Show full question before editing
+        self._print_question(q)
+        print("\nPress Enter to keep the current value.")
+
+        question = input(f"Question: ").strip() or None
+        opt_a    = input(f"Option A [{q['option_a']}]: ").strip() or None
+        opt_b    = input(f"Option B [{q['option_b']}]: ").strip() or None
+        opt_c    = input(f"Option C [{q['option_c']}]: ").strip() or None
+        opt_d    = input(f"Option D [{q['option_d']}]: ").strip() or None
+
+        ans_raw  = input(f"Answer [{q['answer']}] (A/B/C/D, Enter to keep): ").strip().upper()
+        # Validate answer if provided
+        if ans_raw and ans_raw not in ("A", "B", "C", "D"):
+            print("Invalid answer. Must be A, B, C, or D. Answer not changed.")
+            ans_raw = None
+        ans = ans_raw or None
+
+        result = self.update_question(qid, question=question, option_a=opt_a,
+                                      option_b=opt_b, option_c=opt_c,
+                                      option_d=opt_d, answer=ans)
         print(result["message"])
 
-    def display_all_questions(self):
-        result = self.generate_all_questions()
+    def _delete_question(self):
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID to browse: ")
+        if sid is None:
+            return
+        result = self.get_questions_by_subject(sid)
         if not result["status"]:
             print(result["message"])
             return
-        for q in result["questions"]:
-            self._display_question(q)
 
-    def display_question_by_id(self):
-        question_id = self._get_int_input("Enter question ID: ")
-        if question_id is None:
+        # Compact list showing ID and first 60 chars
+        questions = result["questions"]
+        print(f"\n  {'ID':<6} {'Question (first 60 chars)'}")
+        print("  " + "-" * 70)
+        for q in questions:
+            print(f"  {q['id']:<6} {q['question'][:68]}")
+
+        qid = self._get_int("\nEnter question ID to delete: ")
+        if qid is None:
             return
-        result = self.generate_question_by_id(question_id)
-        if not result["status"]:
-            print(result["message"])
+
+        # Show full question so staff confirms they have the right one
+        check = self.get_question_by_id(qid)
+        if not check["status"]:
+            print("Question not found.")
             return
-        self._display_question(result["question"])
+        self._print_question(check["question"])
+
+        if input("\nDelete this question? yes/no: ").strip().lower() != "yes":
+            print("Cancelled.")
+            return
+        print(self.delete_question(qid)["message"])
 
     # ==================================================================
-    # EXAM MANAGEMENT
+    # LESSON MANAGEMENT
     # ==================================================================
-    def exam_menu(self, user):
+    def _lesson_menu(self, user):
         while True:
             print("""
-            --- Exam Management ---
-            1. Create exam
-            2. View all exams
-            3. View exam by ID
-            4. Update exam
-            5. Delete exam
-            6. Back
+            --- Lesson Management ---
+            1. Add lesson
+            2. View lessons by subject
+            3. Update lesson
+            4. Delete lesson
+            5. Back
             """)
             choice = input("Enter choice: ").strip()
-            if   choice == "1": self._create_exam(user)
-            elif choice == "2": self._view_all_exams()
-            elif choice == "3": self._view_exam_by_id()
-            elif choice == "4": self._update_exam()
-            elif choice == "5": self._delete_exam()
-            elif choice == "6": break
+            if   choice == "1": self._add_lesson(user)
+            elif choice == "2": self._view_lessons()
+            elif choice == "3": self._update_lesson()
+            elif choice == "4": self._delete_lesson()
+            elif choice == "5": break
             else: print("Invalid choice.")
 
-    def _create_exam(self, user):
-        print("\n--- Create Exam ---")
-        exam_title = input("Exam title: ").strip()
-        if not exam_title:
-            print("Exam title cannot be empty.")
+    def _add_lesson(self, user):
+        print("\n--- Add Lesson ---")
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID: ")
+        if sid is None:
+            return
+        check = self.get_subject_by_id(sid)
+        if not check["status"]:
+            print("Subject not found.")
             return
 
-        self._view_all_subjects()
-        raw = input("Select subject ID (or Enter for all subjects): ").strip()
-        subject_id = int(raw) if raw.isdigit() else None
-        if subject_id:
-            check = self.get_subject_by_id(subject_id)
-            if not check["status"]:
-                print("Subject not found. Exam will draw from all questions.")
-                subject_id = None
+        print(f"\nAdding lesson to: {check['subject']['subject_name']}")
+        title = input("Lesson title     : ").strip()
+        raw_w = input("Week number      : ").strip()
+        week  = int(raw_w) if raw_w.isdigit() and int(raw_w) >= 1 else 1
+        topic = input("Topic (optional) : ").strip()
+        print("Enter lesson content. Type 'END' on a new line to finish:")
 
-        num_questions = self._get_int_input("Number of questions: ")
-        if num_questions is None or num_questions < 1:
-            print("Invalid number of questions.")
+        lines = []
+        while True:
+            line = input()
+            if line.strip().upper() == "END":
+                break
+            lines.append(line)
+
+        content = "\n".join(lines)
+        result  = self.add_lesson(sid, title, week, topic, content, user["id"])
+        print(result["message"])
+
+    def _view_lessons(self):
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID: ")
+        if sid is None:
             return
-
-        duration_minutes = self._get_int_input("Duration in minutes: ")
-        if duration_minutes is None or duration_minutes < 1:
-            print("Invalid duration.")
+        result = self.get_lessons_by_subject(sid)
+        if not result["status"]:
+            print(result["message"])
             return
+        print(f"\n{'ID':<5} {'Week':<6} {'Topic':<25} {'Title':<35} {'By'}")
+        print("-" * 80)
+        for l in result["lessons"]:
+            print(f"{l['lesson_id']:<5} {l['week']:<6} "
+                  f"{(l['topic'] or 'General')[:23]:<25} "
+                  f"{l['title'][:33]:<35} {l['created_by_name']}")
 
-        result = self.create_exam(
-            exam_title, subject_id, num_questions, duration_minutes, user["id"]
+        if input("\nRead a lesson? yes/no: ").strip().lower() == "yes":
+            lid = self._get_int("Enter lesson ID: ")
+            if lid is None:
+                return
+            r = self.get_lesson_by_id(lid)
+            if r["status"]:
+                self._show_lesson(r["lesson"])
+            else:
+                print(r["message"])
+
+    def _update_lesson(self):
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID to browse: ")
+        if sid is None:
+            return
+        result = self.get_lessons_by_subject(sid)
+        if not result["status"]:
+            print(result["message"])
+            return
+        for l in result["lessons"]:
+            print(f"  [{l['lesson_id']}] Week {l['week']} — {l['title']}")
+
+        lid = self._get_int("Enter lesson ID to update: ")
+        if lid is None:
+            return
+        check = self.get_lesson_by_id(lid)
+        if not check["status"]:
+            print("Lesson not found.")
+            return
+        l = check["lesson"]
+        print("Press Enter to keep current value.")
+        title   = input(f"Title [{l['title']}]: ").strip() or None
+        raw_w   = input(f"Week [{l['week']}]: ").strip()
+        week    = int(raw_w) if raw_w.isdigit() and int(raw_w) >= 1 else None
+        topic   = input(f"Topic [{l['topic'] or ''}]: ").strip()
+        content = None
+        if input("Update content? yes/no: ").strip().lower() == "yes":
+            print("Enter new content. Type 'END' to finish:")
+            lines = []
+            while True:
+                line = input()
+                if line.strip().upper() == "END":
+                    break
+                lines.append(line)
+            content = "\n".join(lines) if lines else None
+
+        result = self.update_lesson(
+            lid, title=title, week=week,
+            topic=topic if topic != "" else None,
+            content=content
         )
         print(result["message"])
 
-    def _view_all_exams(self):
-        result = self.get_all_exams()
+    def _delete_lesson(self):
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID to browse: ")
+        if sid is None:
+            return
+        result = self.get_lessons_by_subject(sid)
         if not result["status"]:
             print(result["message"])
             return
-        print(f"\n{'ID':<5} {'Title':<30} {'Subject':<20} {'Qs':<5} {'Mins':<6} {'Created By'}")
-        print("-" * 80)
-        for e in result["exams"]:
-            subj = (e["subject_name"] or "All subjects")[:18]
-            print(f"{e['exam_id']:<5} {e['exam_title'][:28]:<30} {subj:<20} "
-                  f"{e['num_questions']:<5} {e['duration_minutes']:<6} {e['created_by_name']}")
-
-    def _view_exam_by_id(self):
-        exam_id = self._get_int_input("Enter exam ID: ")
-        if exam_id is None:
-            return
-        result = self.get_exam_by_id(exam_id)
-        if not result["status"]:
-            print(result["message"])
-            return
-        e = result["exam"]
-        print(f"\n  ID         : {e['exam_id']}")
-        print(f"  Title      : {e['exam_title']}")
-        print(f"  Subject    : {e['subject_name'] or 'All subjects'}")
-        print(f"  Questions  : {e['num_questions']}")
-        print(f"  Duration   : {e['duration_minutes']} minutes")
-        print(f"  Created by : {e['created_by_name']}")
-        print(f"  Created at : {e['created_at']}")
-
-    def _update_exam(self):
-        self._view_all_exams()
-        exam_id = self._get_int_input("Enter exam ID to update: ")
-        if exam_id is None:
-            return
-        check = self.get_exam_by_id(exam_id)
-        if not check["status"]:
-            print(check["message"])
-            return
-        e = check["exam"]
-        print("Press Enter to keep the current value.")
-        title  = input(f"Title [{e['exam_title']}]: ").strip() or None
-        raw_q  = input(f"Questions [{e['num_questions']}]: ").strip()
-        num_q  = int(raw_q) if raw_q.isdigit() else None
-        raw_d  = input(f"Duration [{e['duration_minutes']}]: ").strip()
-        dur    = int(raw_d) if raw_d.isdigit() else None
-        result = self.update_exam(exam_id, exam_title=title,
-                                  num_questions=num_q, duration_minutes=dur)
-        print(result["message"])
-
-    def _delete_exam(self):
-        self._view_all_exams()
-        exam_id = self._get_int_input("Enter exam ID to delete: ")
-        if exam_id is None:
+        for l in result["lessons"]:
+            print(f"  [{l['lesson_id']}] Week {l['week']} — {l['title']}")
+        lid = self._get_int("Enter lesson ID to delete: ")
+        if lid is None:
             return
         if input("Are you sure? yes/no: ").strip().lower() != "yes":
             print("Cancelled.")
             return
-        print(self.delete_exam(exam_id)["message"])
+        print(self.delete_lesson(lid)["message"])
 
     # ==================================================================
-    # EXAM ENGINE
+    # RESULTS
     # ==================================================================
-    def _normalize_answer(self, ans):
-        ans = ans.strip().upper()
-        return ans[0] if ans else ""
+    def _view_results_menu(self):
+        while True:
+            print("""
+            --- View Results ---
+            1. Results by subject
+            2. All results
+            3. Back
+            """)
+            choice = input("Enter choice: ").strip()
+            if   choice == "1": self._results_by_subject()
+            elif choice == "2": self._all_results()
+            elif choice == "3": break
+            else: print("Invalid choice.")
 
-    def take_exams(self, user, subject_id=None, num_questions=None, duration_minutes=None):
-        exam = self.generate_exams(
-            subject_id=subject_id,
-            num_questions=num_questions,
-            duration_minutes=duration_minutes or 30
-        )
-        if not exam["status"]:
-            print(exam["message"])
+    def _results_by_subject(self):
+        self._print_subjects(self.get_all_subjects().get("subjects", []))
+        sid = self._get_int("Enter subject ID: ")
+        if sid is None:
             return
-
-        questions    = exam["question"]
-        responses    = []
-        score        = 0
-        exam_minutes = exam.get("time", 30)
-        timer_state  = {"time_up": False, "submitted": False}
-        use_speech   = input("Read questions aloud? yes/no: ").strip().lower() == "yes"
-
-        print(f"\n  {len(questions)} questions | {exam_minutes} minutes | Timer started.\n")
-
-        timer_thread = threading.Thread(
-            target=self.exam_countdown_timer,
-            args=(exam_minutes * 60, timer_state),
-            daemon=True
-        )
-        timer_thread.start()
-
-        for number, item in enumerate(questions, start=1):
-            if timer_state["time_up"]:
-                break
-
-            print(f"\nQuestion {number}/{len(questions)}: {item['question']}")
-            print(f"  A. {item['option_a']}")
-            print(f"  B. {item['option_b']}")
-            print(f"  C. {item['option_c']}")
-            print(f"  D. {item['option_d']}")
-
-            if use_speech:
-                self.speak_text(
-                    f"Question {number}. {item['question']}. "
-                    f"A. {item['option_a']}. B. {item['option_b']}. "
-                    f"C. {item['option_c']}. D. {item['option_d']}."
-                )
-
-            response = input("Your answer (A/B/C/D): ").strip()
-
-            if timer_state["time_up"]:
-                print("  Time expired. This answer will not be scored.")
-                break
-
-            responses.append(response)
-            if self._normalize_answer(response) == self._normalize_answer(item["answer"]):
-                score += 1
-                print("  ✓ Correct!")
-            else:
-                print(f"  ✗ Wrong. Correct answer: {item['answer']}")
-
-        timer_state["submitted"] = True
-
-        total   = len(questions)
-        percent = (score / total * 100) if total > 0 else 0
-        grade   = self.calculate_grade(percent)
-
-        print(f"\n  ========================")
-        print(f"  EXAM RESULT")
-        print(f"  ========================")
-        print(f"  Name  : {user['fullname']}")
-        print(f"  Score : {score}/{total} ({percent:.2f}%)")
-        print(f"  Grade : {grade}")
-        print(f"  ========================")
-
-        result = self.save_result(user, percent, grade, responses, subject_id=subject_id)
-        print(result["message"])
-
-    def calculate_grade(self, percent):
-        if 70 <= percent <= 100: return "A — Excellent"
-        if 60 <= percent < 70:  return "B — Good"
-        if 50 <= percent < 60:  return "C — Average"
-        if 40 <= percent < 50:  return "D — Below Average"
-        return "F — Failed"
-
-    # ==================================================================
-    # VIEW HELPERS
-    # ==================================================================
-    def view_my_results(self, user):
-        results = self.get_all_results_by_user(user["id"])
-        if not results:
-            print("No results yet. Please take an exam first.")
+        result = self.get_results_by_subject(sid)
+        if not result["status"]:
+            print(result["message"])
             return
-        print(f"\n{'Subject':<25} {'Score':<10} {'Grade':<22} {'Date'}")
-        print("-" * 75)
-        for r in results:
-            subj = (r.get("subject_name") or "General")[:23]
-            print(f"{subj:<25} {r['percent']:<10.2f} {r['grade']:<22} "
+        print(f"\n{'Name':<25} {'Score':<10} {'Percent':<10} {'Grade':<6} {'Date'}")
+        print("-" * 70)
+        for r in result["results"]:
+            print(f"{r['fullname'][:23]:<25} "
+                  f"{r['score']}/{r['total']:<8} "
+                  f"{r['percent']:<10.2f} "
+                  f"{r['grade']:<6} "
                   f"{str(r['created_at'])[:19]}")
 
-    def view_all_users(self):
-        users = self.get_all_users()
-        if not users:
-            print("No users found.")
-            return
-        print(f"\n{'ID':<10} {'Name':<25} {'Email':<35} {'Role'}")
-        print("-" * 80)
-        for u in users:
-            print(f"{u['id']:<10} {u['fullname'][:23]:<25} "
-                  f"{u['email']:<35} {u['role']}")
-
-    def view_all_results(self):
+    def _all_results(self):
         results = self.get_all_results()
         if not results:
             print("No results found.")
             return
-        print(f"\n{'Name':<25} {'Subject':<20} {'Score':<10} {'Grade':<22} {'Date'}")
+        print(f"\n{'Name':<25} {'Subject':<22} {'Score':<10} {'Percent':<10} "
+              f"{'Grade':<6} {'Date'}")
         print("-" * 90)
         for r in results:
-            subj = (r.get("subject_name") or "General")[:18]
-            print(f"{r['fullname'][:23]:<25} {subj:<20} {r['percent']:<10.2f} "
-                  f"{r['grade']:<22} {str(r['created_at'])[:19]}")
-
-    def view_details(self, user):
-        print("\n--- Your Details ---")
-        skip = {"password"}
-        for key, value in user.items():
-            if key in skip:
-                continue
-            print(f"  {key.replace('_', ' ').title()}: "
-                  f"{value if value is not None else 'Not set'}")
-
-    def _display_question(self, question):
-        subj = question.get("subject_name") or "No subject"
-        print(f"\n  [ID: {question['id']}]  Subject: {subj}")
-        print(f"  Q: {question['question']}")
-        print(f"     A. {question['option_a']}")
-        print(f"     B. {question['option_b']}")
-        print(f"     C. {question['option_c']}")
-        print(f"     D. {question['option_d']}")
-        print(f"     Answer: {question['answer']}")
+            print(f"{r['fullname'][:23]:<25} "
+                  f"{r['subject_name'][:20]:<22} "
+                  f"{r['score']}/{r['total']:<8} "
+                  f"{r['percent']:<10.2f} "
+                  f"{r['grade']:<6} "
+                  f"{str(r['created_at'])[:19]}")
 
     # ==================================================================
-    # GET INT INPUT
+    # STAFF MANAGEMENT (admin only)
     # ==================================================================
-    def _get_int_input(self, prompt):
+    def _staff_management(self, admin):
+        while True:
+            print("""
+            --- Staff Management ---
+            1. Create staff account
+            2. View all staff
+            3. Reset staff password
+            4. Delete staff account
+            5. Back
+            """)
+            choice = input("Enter choice: ").strip()
+            if   choice == "1": self._admin_create_staff(admin)
+            elif choice == "2": self._view_all_staff()
+            elif choice == "3": self._admin_reset_staff_password()
+            elif choice == "4": self._admin_delete_staff()
+            elif choice == "5": break
+            else: print("Invalid choice.")
+
+    def _admin_create_staff(self, admin):
+        print("\n--- Create Staff Account ---")
+        fullname   = input("Full name    : ").strip()
+        if not fullname:
+            print("Full name is required.")
+            return
+        email      = input("Email        : ").strip()
+        if not self.validate_email(email):
+            print("Invalid email address.")
+            return
+        phone      = input("Phone        : ").strip()
+        department = input("Department   : ").strip()
+
+        # Admin sets the initial password
+        if input("Generate strong password? yes/no: ").strip().lower() == "yes":
+            password = self.generate_strong_password()
+            confirm  = password
+            print(f"\n  Generated password: {password}")
+            print("  Share this with the staff member securely.\n")
+        else:
+            password = input("Set password : ")
+            confirm  = input("Confirm      : ")
+
+        user_id = randint(100000, 899999)
+        result  = self.create_account(
+            email, fullname, password, confirm, "staff", user_id,
+            phone=phone, department=department
+        )
+        if result["status"]:
+            print(f"\n  Staff account created successfully!")
+            print(f"  Name      : {fullname}")
+            print(f"  Email     : {email}")
+            print(f"  Staff ID  : {user_id}")
+            print(f"  Department: {department or 'Not set'}")
+            print(f"\n  Share the email and password with the staff member.")
+        else:
+            print(result["message"])
+
+    def _view_all_staff(self):
+        users = self.get_all_users()
+        staff = [u for u in users if u["role"] == "staff"]
+        if not staff:
+            print("\n  No staff accounts found.")
+            return
+        print(f"\n  {'ID':<10} {'Name':<25} {'Email':<30} {'Department'}")
+        print("  " + "-" * 80)
+        for u in staff:
+            print(f"  {u['id']:<10} {u['fullname'][:23]:<25} "
+                  f"{u['email']:<30} {u['department'] or 'Not set'}")
+
+    def _admin_reset_staff_password(self):
+        self._view_all_staff()
+        email = input("\nEnter staff email to reset password: ").strip()
+        user  = self.get_user_by_email(email)
+        if not user:
+            print("No account found with that email.")
+            return
+        if user["role"] != "staff":
+            print("That account is not a staff account.")
+            return
+
+        if input("Generate strong password? yes/no: ").strip().lower() == "yes":
+            new_pw  = self.generate_strong_password()
+            confirm = new_pw
+            print(f"\n  New password: {new_pw}")
+            print("  Share this with the staff member securely.\n")
+        else:
+            new_pw  = input("New password : ")
+            confirm = input("Confirm      : ")
+
+        result = self.reset_password(email, new_pw, confirm)
+        print(result["message"])
+
+    def _admin_delete_staff(self):
+        self._view_all_staff()
+        email = input("\nEnter staff email to delete: ").strip()
+        user  = self.get_user_by_email(email)
+        if not user:
+            print("No account found with that email.")
+            return
+        if user["role"] != "staff":
+            print("That account is not a staff account.")
+            return
+        print(f"\n  Name : {user['fullname']}")
+        print(f"  Email: {user['email']}")
+        if input("\n  Delete this staff account? yes/no: ").strip().lower() != "yes":
+            print("  Cancelled.")
+            return
+        result = self.delete_user(user["id"])
+        print(result["message"])
+
+    # ==================================================================
+    # ADMIN — VIEW ALL USERS
+    # ==================================================================
+    def _view_all_users(self):
+        users = self.get_all_users()
+        if not users:
+            print("No users found.")
+            return
+        print(f"\n{'ID':<10} {'Name':<25} {'Email':<30} {'Role':<10} {'Dept'}")
+        print("-" * 90)
+        for u in users:
+            print(f"{u['id']:<10} {u['fullname'][:23]:<25} "
+                  f"{u['email']:<30} {u['role']:<10} "
+                  f"{u['department'] or 'N/A'}")
+
+    # ==================================================================
+    # PROFILE
+    # ==================================================================
+    def _view_profile(self, user):
+        while True:
+            print(f"""
+            --- Profile ---
+            Name      : {user['fullname']}
+            ID        : {user['id']}
+            Email     : {user['email']}
+            Role      : {user['role']}
+            Phone     : {user.get('phone') or 'Not set'}
+            Department: {user.get('department') or 'Not set'}
+
+            1. Update profile
+            2. Back
+            """)
+            choice = input("Enter choice: ").strip()
+            if   choice == "1": user = self._update_profile(user)
+            elif choice == "2": break
+            else: print("Invalid choice.")
+
+    def _update_profile(self, user):
+        print("\n--- Update Profile --- (Press Enter to keep current value)")
+        fullname   = input(f"Full name [{user['fullname']}]: ").strip() or None
+        phone      = input(f"Phone [{user.get('phone') or ''}]: ").strip() or None
+        department = input(f"Department [{user.get('department') or ''}]: ").strip() or None
+        result     = self.update_profile(user["id"], fullname, phone, department)
+        print(result["message"])
+        return result["data"] if result["status"] else user
+
+    # ==================================================================
+    # HELPERS
+    # ==================================================================
+    def _refresh_user(self, user):
+        self.mycursor.execute("SELECT * FROM users WHERE id=%s", (user["id"],))
+        fresh = self.mycursor.fetchone()
+        return fresh if fresh else user
+
+    def _print_subjects(self, subjects):
+        if not subjects:
+            print("No subjects found.")
+            return
+        print(f"\n{'ID':<5} {'Code':<12} {'Name':<30} {'Questions':<12} {'Lessons'}")
+        print("-" * 70)
+        for s in subjects:
+            print(f"{s['subject_id']:<5} {s['subject_code']:<12} "
+                  f"{s['subject_name']:<30} "
+                  f"{s.get('question_count', 0):<12} "
+                  f"{s.get('lesson_count', 0)}")
+
+    def _print_question(self, q):
+        print(f"\n  [ID: {q['id']}]  {q['question']}")
+        print(f"    A. {q['option_a']}")
+        print(f"    B. {q['option_b']}")
+        print(f"    C. {q['option_c']}")
+        print(f"    D. {q['option_d']}")
+        print(f"    Answer: {q['answer']}")
+
+    def _get_int(self, prompt):
         try:
             return int(input(prompt).strip())
         except ValueError:
@@ -877,4 +1377,4 @@ class cbtapp(cbtconfig):
 
 
 if __name__ == "__main__":
-    cbtapp("Taiwo CBT")
+    cbtapp("AcademIQ")

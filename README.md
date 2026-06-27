@@ -33,7 +33,6 @@ A Python console-based Computer Based Test (CBT) application with MySQL database
 \## Installation
 
 
-
 1\. Clone the repository:
 
  git clone https://github.com/agboolataiwo121/cbtapp.git
